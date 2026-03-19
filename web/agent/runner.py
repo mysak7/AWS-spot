@@ -1,7 +1,10 @@
 import json
 import os
 import pwd
+import shutil
+import stat
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from threading import Event
@@ -117,15 +120,30 @@ def run_agent(
     Returns (summary, final_status) where final_status is done|failed|stopped.
     """
     host_id = host.get("host_id", "unknown")
+
+    # Copy key to a temp file readable by claudeuser (keys/ are root-owned 400)
+    key_file = host.get("key_file", "")
+    tmp_key: str | None = None
+    try:
+        pw = pwd.getpwnam(CLAUDE_USER)
+        fd, tmp_key = tempfile.mkstemp(suffix=".pem", dir="/tmp")
+        os.close(fd)
+        shutil.copy2(key_file, tmp_key)
+        os.chown(tmp_key, pw.pw_uid, pw.pw_gid)
+        os.chmod(tmp_key, stat.S_IRUSR)  # 400
+    except Exception:
+        tmp_key = key_file  # fallback to original path
+
     prompt = TASK_PROMPT.format(
         public_ip=host.get("public_ip", ""),
-        key_file=host.get("key_file", ""),
+        key_file=tmp_key,
         instruction=instruction,
     )
 
     cmd = claude_bin.split() + [
         "-p", prompt,
         "--output-format", "stream-json",
+        "--verbose",
         "--allowedTools", "Bash",
         "--max-turns", "30",
         "--dangerously-skip-permissions",
@@ -181,5 +199,11 @@ def run_agent(
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     on_log({"type": "agent", "content": f"[finished in {duration_ms // 1000}s · status: {final_status}]"})
+
+    if tmp_key and tmp_key != key_file:
+        try:
+            os.unlink(tmp_key)
+        except OSError:
+            pass
 
     return summary or instruction[:80], final_status
