@@ -29,6 +29,7 @@ from agent.sessions import (
     load_session, load_session_meta, read_log, list_sessions,
 )
 from agent.runner import run_agent
+from llm_log import load_log, get_totals, INPUT_COST_PER_M, OUTPUT_COST_PER_M
 
 creds: dict[str, str] = {}
 account_id: str = ""
@@ -285,6 +286,7 @@ async def host_run(request: Request, host_id: str):
                 host, instruction, on_log,
                 bridge_url=bridge_cfg["bridge_url"],
                 bridge_api_key=bridge_cfg["bridge_api_key"],
+                session_id=session_id,
             )
             finish_session(host_id, session_id, "done", summary)
         except Exception as e:
@@ -309,6 +311,23 @@ async def session_detail(request: Request, host_id: str, session_id: str):
         return HTMLResponse('<p class="text-red-400 p-8">Session not found.</p>')
     return templates.TemplateResponse("session_detail.html", ctx(
         request, host=host, session=session, active_page="inventory",
+    ))
+
+
+# ── LLM Usage ─────────────────────────────────────────────────────────────────
+
+@app.get("/llm", response_class=HTMLResponse)
+async def llm_page(request: Request):
+    entries = load_log()
+    entries_desc = list(reversed(entries))
+    totals = get_totals(entries)
+    return templates.TemplateResponse("llm.html", ctx(
+        request,
+        entries=entries_desc,
+        totals=totals,
+        input_cost_per_m=INPUT_COST_PER_M,
+        output_cost_per_m=OUTPUT_COST_PER_M,
+        active_page="llm",
     ))
 
 

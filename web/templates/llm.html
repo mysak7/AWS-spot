@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="px-8 py-8 max-w-7xl mx-auto">
+
+  <!-- Header -->
+  <div class="mb-7">
+    <h1 class="text-2xl font-bold text-slate-100">LLM Usage</h1>
+    <p class="text-slate-400 text-sm mt-1">
+      All queries to ClaudeBridge — persisted across restarts.
+      Costs estimated at ${{ input_cost_per_m }}/M input · ${{ output_cost_per_m }}/M output tokens.
+    </p>
+  </div>
+
+  <!-- Totals cards -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Total Queries</div>
+      <div class="text-xl font-bold text-slate-100">{{ totals.queries }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Input Tokens</div>
+      <div class="text-xl font-bold text-blue-400">{{ "{:,}".format(totals.input_tokens) }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Output Tokens</div>
+      <div class="text-xl font-bold text-purple-400">{{ "{:,}".format(totals.output_tokens) }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Total Tokens</div>
+      <div class="text-xl font-bold text-slate-200">{{ "{:,}".format(totals.total_tokens) }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Est. Cost</div>
+      <div class="text-xl font-bold text-green-400">${{ "%.4f"|format(totals.cost_usd) }}</div>
+    </div>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="text-xs text-slate-500 mb-1">Avg Latency</div>
+      <div class="text-xl font-bold text-yellow-400">{{ totals.avg_duration_ms }}ms</div>
+    </div>
+  </div>
+
+  <!-- Query log table -->
+  {% if entries %}
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-slate-800 text-xs text-slate-500 uppercase tracking-wider">
+            <th class="text-left px-4 py-3 font-medium">Time</th>
+            <th class="text-left px-4 py-3 font-medium">Host</th>
+            <th class="text-left px-4 py-3 font-medium">Session</th>
+            <th class="text-center px-4 py-3 font-medium">Step</th>
+            <th class="text-left px-4 py-3 font-medium">Model</th>
+            <th class="text-right px-4 py-3 font-medium">In Tokens</th>
+            <th class="text-right px-4 py-3 font-medium">Out Tokens</th>
+            <th class="text-right px-4 py-3 font-medium">Cost</th>
+            <th class="text-right px-4 py-3 font-medium">Latency</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+          {% for e in entries %}
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="px-4 py-2.5 font-mono text-xs text-slate-400 whitespace-nowrap">{{ e.ts }}</td>
+            <td class="px-4 py-2.5">
+              <a href="/host/{{ e.host_id }}"
+                 class="font-mono text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                {{ e.host_id[-8:] }}
+              </a>
+            </td>
+            <td class="px-4 py-2.5">
+              <a href="/host/{{ e.host_id }}/session/{{ e.session_id }}"
+                 class="font-mono text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                {{ e.session_id[:8] }}…
+              </a>
+            </td>
+            <td class="px-4 py-2.5 text-center">
+              {% if e.step == 0 %}
+                <span class="text-xs text-slate-500 italic">summary</span>
+              {% else %}
+                <span class="text-xs text-slate-300">{{ e.step }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2.5 font-mono text-xs text-slate-300">{{ e.model }}</td>
+            <td class="px-4 py-2.5 text-right font-mono text-xs text-blue-400">
+              {{ "{:,}".format(e.input_tokens) }}
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono text-xs text-purple-400">
+              {{ "{:,}".format(e.output_tokens) }}
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono text-xs text-green-400">
+              ${{ "%.6f"|format(e.cost_usd) }}
+            </td>
+            <td class="px-4 py-2.5 text-right font-mono text-xs
+              {% if e.duration_ms > 5000 %}text-red-400
+              {% elif e.duration_ms > 2000 %}text-yellow-400
+              {% else %}text-slate-400{% endif %}">
+              {{ e.duration_ms }}ms
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
+    <div class="text-slate-600 text-4xl mb-3">🤖</div>
+    <p class="text-slate-400 text-sm">No LLM queries yet.</p>
+    <p class="text-slate-600 text-xs mt-1">Run an agent on a host to start seeing usage data.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -1,11 +1,13 @@
 import json
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
 from openai import OpenAI
 
 from .ssh_client import SSHClient
+from llm_log import append_query
 
 MAX_STEPS = 40
 
@@ -50,18 +52,41 @@ def _parse_action(text: str) -> dict | None:
     return None
 
 
+def _call(client: OpenAI, messages: list, host_id: str, session_id: str, step: int) -> Any:
+    t0 = time.monotonic()
+    resp = client.chat.completions.create(
+        model="claude-code",
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+    )
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    usage = resp.usage
+    if usage:
+        append_query(
+            host_id=host_id,
+            session_id=session_id,
+            step=step,
+            model=resp.model or "claude-code",
+            input_tokens=usage.prompt_tokens or 0,
+            output_tokens=usage.completion_tokens or 0,
+            duration_ms=duration_ms,
+        )
+    return resp
+
+
 def run_agent(
     host: dict[str, Any],
     instruction: str,
     on_log: Callable[[dict[str, Any]], None],
     bridge_url: str = "http://localhost:8001",
     bridge_api_key: str = "test",
+    session_id: str = "",
 ) -> str:
     """
     Connect via SSH, let Claude (via ClaudeBridge) run commands to fulfill the instruction.
     Streams log entries via on_log callback.
     Returns a summary string.
     """
+    host_id = host.get("host_id", "unknown")
     client = OpenAI(base_url=f"{bridge_url.rstrip('/')}/v1", api_key=bridge_api_key)
     ssh = SSHClient(hostname=host["public_ip"], key_filename=host["key_file"])
 
@@ -72,10 +97,7 @@ def run_agent(
 
     try:
         while steps < MAX_STEPS:
-            response = client.chat.completions.create(
-                model="claude-code",
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
-            )
+            response = _call(client, messages, host_id, session_id, steps + 1)
 
             raw = response.choices[0].message.content or ""
             action = _parse_action(raw)
@@ -130,6 +152,7 @@ def run_agent(
                 break
 
         # Generate summary
+        t0 = time.monotonic()
         summary_resp = client.chat.completions.create(
             model="claude-code",
             messages=[
@@ -144,6 +167,18 @@ def run_agent(
                 }
             ],
         )
+        dur = int((time.monotonic() - t0) * 1000)
+        usage = summary_resp.usage
+        if usage:
+            append_query(
+                host_id=host_id,
+                session_id=session_id,
+                step=0,
+                model=summary_resp.model or "claude-code",
+                input_tokens=usage.prompt_tokens or 0,
+                output_tokens=usage.completion_tokens or 0,
+                duration_ms=dur,
+            )
         return summary_resp.choices[0].message.content.strip()
 
     finally:
