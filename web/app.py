@@ -302,7 +302,7 @@ async def host_run(request: Request, host_id: str):
         return HTMLResponse('<p class="text-red-400 text-sm">Host not found.</p>')
 
     session_id = create_session(host_id, instruction)
-    bridge_cfg = load_config()
+    cfg = load_config()
     stop_event = create_flag(session_id)
 
     def do_run() -> None:
@@ -311,8 +311,7 @@ async def host_run(request: Request, host_id: str):
         try:
             summary, final_status = run_agent(
                 host, instruction, on_log,
-                bridge_url=bridge_cfg["bridge_url"],
-                bridge_api_key=bridge_cfg["bridge_api_key"],
+                claude_bin=cfg["claude_bin"],
                 session_id=session_id,
                 stop_event=stop_event,
             )

@@ -1,210 +1,169 @@
 import json
-import re
+import subprocess
 import time
 from collections.abc import Callable
 from threading import Event
 from typing import Any
 
-from openai import OpenAI
-
-from .ssh_client import SSHClient
 from llm_log import append_query
 
-MAX_STEPS = 40
+CLAUDE_BIN_DEFAULT = "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"
 
-SYSTEM_PROMPT = """\
-You control a remote EC2 spot instance via SSH. You do NOT have direct access to any \
-local machine or filesystem. Every command you want to run must be sent as a JSON object \
-so the system can SSH it to the remote server and return the output to you.
+TASK_PROMPT = """\
+You are controlling a remote EC2 instance via SSH.
 
-YOU MUST reply with ONLY a raw JSON object — no markdown, no backticks, no explanation, \
-no prose before or after. Just the JSON.
+Host IP: {public_ip}
+SSH key: {key_file}
+SSH user: ec2-user
 
-To run a command on the remote server:
-{"action": "run", "command": "the shell command"}
+To run commands on the remote host use:
+  ssh -i {key_file} -o StrictHostKeyChecking=no -o BatchMode=yes ec2-user@{public_ip} 'your command'
 
-When the task is fully complete:
-{"action": "done", "message": "brief description of what was done"}
+For multiple commands in one call use:
+  ssh -i {key_file} -o StrictHostKeyChecking=no ec2-user@{public_ip} 'bash -s' <<'EOF'
+  command1
+  command2
+  EOF
 
-Rules:
-- One command per reply
-- Wait for the output before deciding the next command
-- Use sudo when needed
-- If a command fails, fix it before moving on
-- Do not describe what you are doing — just output the JSON
+Task: {instruction}
 """
 
 
-def _parse_action(text: str) -> dict | None:
-    """Extract the first JSON object from the model response."""
-    text = text.strip()
-    # Try direct parse first
+def _parse_stream(
+    line: str,
+    on_log: Callable[[dict[str, Any]], None],
+    host_id: str,
+    session_id: str,
+) -> dict | None:
+    """Parse one stream-json line. Returns the result event or None."""
     try:
-        return json.loads(text)
+        event = json.loads(line)
     except json.JSONDecodeError:
-        pass
-    # Find JSON block inside backticks or anywhere in the text
-    match = re.search(r'\{[^{}]+\}', text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
+        if line.strip():
+            on_log({"type": "agent", "content": line.strip()})
+        return None
+
+    etype = event.get("type")
+
+    if etype == "assistant":
+        for block in event.get("message", {}).get("content", []):
+            btype = block.get("type")
+            if btype == "text" and block.get("text", "").strip():
+                on_log({"type": "agent", "content": block["text"].strip()})
+            elif btype == "tool_use" and block.get("name") == "Bash":
+                cmd = block.get("input", {}).get("command", "").strip()
+                if cmd:
+                    on_log({"type": "cmd", "content": cmd})
+
+    elif etype == "user":
+        for block in event.get("message", {}).get("content", []):
+            if block.get("type") == "tool_result":
+                content = block.get("content", "")
+                if isinstance(content, list):
+                    text = "\n".join(
+                        c.get("text", "") for c in content if c.get("type") == "text"
+                    )
+                else:
+                    text = str(content)
+                if text.strip():
+                    on_log({"type": "output", "content": text.rstrip()})
+
+    elif etype == "result":
+        input_tok = event.get("input_tokens", 0) or 0
+        output_tok = event.get("output_tokens", 0) or 0
+        duration = event.get("duration_ms", 0) or 0
+        if input_tok or output_tok:
+            append_query(
+                host_id=host_id,
+                session_id=session_id,
+                step=0,
+                model="claude-code",
+                input_tokens=input_tok,
+                output_tokens=output_tok,
+                duration_ms=duration,
+            )
+        return event
+
+    elif etype == "system" and event.get("subtype") == "error":
+        on_log({"type": "error", "content": event.get("error", {}).get("message", str(event))})
+
     return None
-
-
-def _call(client: OpenAI, messages: list, host_id: str, session_id: str, step: int) -> Any:
-    t0 = time.monotonic()
-    resp = client.chat.completions.create(
-        model="claude-code",
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
-    )
-    duration_ms = int((time.monotonic() - t0) * 1000)
-    usage = resp.usage
-    if usage:
-        append_query(
-            host_id=host_id,
-            session_id=session_id,
-            step=step,
-            model=resp.model or "claude-code",
-            input_tokens=usage.prompt_tokens or 0,
-            output_tokens=usage.completion_tokens or 0,
-            duration_ms=duration_ms,
-        )
-    return resp
 
 
 def run_agent(
     host: dict[str, Any],
     instruction: str,
     on_log: Callable[[dict[str, Any]], None],
-    bridge_url: str = "http://localhost:8001",
-    bridge_api_key: str = "test",
+    claude_bin: str = CLAUDE_BIN_DEFAULT,
     session_id: str = "",
     stop_event: Event | None = None,
+    **_kwargs: Any,  # absorb legacy bridge_url / bridge_api_key if passed
 ) -> tuple[str, str]:
-    """Returns (summary, final_status) where final_status is 'done'|'failed'|'stopped'."""
-    """
-    Connect via SSH, let Claude (via ClaudeBridge) run commands to fulfill the instruction.
-    Streams log entries via on_log callback.
-    Returns a summary string.
+    """Run claude locally to control the remote host via SSH.
+    Returns (summary, final_status) where final_status is done|failed|stopped.
     """
     host_id = host.get("host_id", "unknown")
-    client = OpenAI(base_url=f"{bridge_url.rstrip('/')}/v1", api_key=bridge_api_key)
-    ssh = SSHClient(hostname=host["public_ip"], key_filename=host["key_file"])
+    prompt = TASK_PROMPT.format(
+        public_ip=host.get("public_ip", ""),
+        key_file=host.get("key_file", ""),
+        instruction=instruction,
+    )
 
-    messages: list[dict[str, Any]] = [{"role": "user", "content": instruction}]
-    steps = 0
-    total_parse_failures = 0
-    consecutive_parse_failures = 0
-    last_message = ""
-    recent_commands: list[str] = []  # last N commands for loop detection
-    stopped = False
+    cmd = claude_bin.split() + [
+        "-p", prompt,
+        "--output-format", "stream-json",
+        "--allowedTools", "Bash",
+        "--max-turns", "30",
+    ]
+
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+    except FileNotFoundError as e:
+        msg = f"claude binary not found: {claude_bin}"
+        on_log({"type": "error", "content": msg})
+        return msg, "failed"
+
+    result_event: dict | None = None
+    final_status = "done"
 
     try:
-        while steps < MAX_STEPS:
+        for line in proc.stdout:  # type: ignore[union-attr]
             if stop_event and stop_event.is_set():
-                stopped = True
-                last_message = "Stopped by user."
+                proc.terminate()
                 on_log({"type": "error", "content": "Stopped by user."})
+                final_status = "stopped"
                 break
+            ev = _parse_stream(line, on_log, host_id, session_id)
+            if ev is not None:
+                result_event = ev
 
-            response = _call(client, messages, host_id, session_id, steps + 1)
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
-            raw = response.choices[0].message.content or ""
-            action = _parse_action(raw)
+    # Capture any stderr (e.g. auth errors, node crashes)
+    stderr = proc.stderr.read() if proc.stderr else ""  # type: ignore[union-attr]
+    if stderr.strip():
+        on_log({"type": "error", "content": stderr.strip()})
 
-            if action is None:
-                consecutive_parse_failures += 1
-                total_parse_failures += 1
-                on_log({"type": "agent", "content": f"[raw] {raw.strip()}"})
-                if consecutive_parse_failures >= 2 or total_parse_failures >= 5:
-                    last_message = raw.strip()
-                    break
-                # Ask Claude to retry with proper JSON
-                messages.append({"role": "assistant", "content": raw})
-                messages.append({
-                    "role": "user",
-                    "content": 'Reply with ONLY a JSON object. Example: {"action": "run", "command": "uname -a"}',
-                })
-                continue
+    if final_status == "done":
+        if proc.returncode not in (0, None):
+            final_status = "failed"
+        elif result_event and result_event.get("subtype") == "error_during_execution":
+            final_status = "failed"
 
-            consecutive_parse_failures = 0
+    summary = ""
+    if result_event:
+        summary = result_event.get("result", "")
 
-            if action.get("action") == "done":
-                last_message = action.get("message", "Done.")
-                on_log({"type": "agent", "content": last_message})
-                break
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    on_log({"type": "agent", "content": f"[finished in {duration_ms // 1000}s · status: {final_status}]"})
 
-            if action.get("action") == "run":
-                command = action.get("command", "").strip()
-
-                # Loop detection: same command 3 times in last 6 steps → abort
-                recent_commands.append(command)
-                if len(recent_commands) > 6:
-                    recent_commands.pop(0)
-                if recent_commands.count(command) >= 3:
-                    last_message = f"Aborted: repeated command '{command}' detected in a loop."
-                    on_log({"type": "error", "content": last_message})
-                    break
-
-                on_log({"type": "cmd", "content": command})
-
-                out, err, exit_code = ssh.run(command)
-
-                output_parts = []
-                if out.strip():
-                    output_parts.append(out.rstrip())
-                if err.strip():
-                    output_parts.append(f"[stderr]\n{err.rstrip()}")
-                if exit_code != 0:
-                    output_parts.append(f"[exit code: {exit_code}]")
-                output = "\n".join(output_parts) or "(no output)"
-
-                on_log({"type": "output", "content": output})
-
-                messages.append({"role": "assistant", "content": raw})
-                messages.append({
-                    "role": "user",
-                    "content": f"Command output:\n{output}\n\nContinue with the next step.",
-                })
-                steps += 1
-            else:
-                on_log({"type": "agent", "content": raw.strip()})
-                last_message = raw.strip()
-                break
-
-        final_status = "stopped" if stopped else "done"
-
-        # Generate summary
-        t0 = time.monotonic()
-        summary_resp = client.chat.completions.create(
-            model="claude-code",
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"Original instruction: {instruction}\n\n"
-                        f"Final status: {last_message}\n\n"
-                        "Write a 1-3 sentence summary of what was accomplished. "
-                        "Plain text only, no JSON."
-                    ),
-                }
-            ],
-        )
-        dur = int((time.monotonic() - t0) * 1000)
-        usage = summary_resp.usage
-        if usage:
-            append_query(
-                host_id=host_id,
-                session_id=session_id,
-                step=0,
-                model=summary_resp.model or "claude-code",
-                input_tokens=usage.prompt_tokens or 0,
-                output_tokens=usage.completion_tokens or 0,
-                duration_ms=dur,
-            )
-        return summary_resp.choices[0].message.content.strip(), final_status
-
-    finally:
-        ssh.close()
+    return summary or instruction[:80], final_status

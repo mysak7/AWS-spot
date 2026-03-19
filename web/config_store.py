@@ -4,8 +4,7 @@ from pathlib import Path
 CONFIG_FILE = Path(__file__).parent.parent / "bridge_config.json"
 
 DEFAULT_CONFIG: dict = {
-    "bridge_url": "http://localhost:8001",
-    "bridge_api_key": "test",
+    "claude_bin": "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js",
 }
 
 
