@@ -35,7 +35,7 @@
         Edit
       </button>
       {% if s == 'running' %}
-      <button onclick="navigator.clipboard.writeText('{{ host.ssh_cmd }}')"
+      <button onclick="copyText('{{ host.ssh_cmd }}', this)"
               title="{{ host.ssh_cmd }}"
               class="px-2.5 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
         SSH

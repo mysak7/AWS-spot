@@ -39,6 +39,25 @@
       });
     });
 
+    function copyText(text, btn) {
+      const done = () => {
+        if (btn) { const orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = orig, 1500); }
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+    function fallbackCopy(text, cb) {
+      const el = document.createElement('textarea');
+      el.value = text; el.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(el); el.select();
+      try { document.execCommand('copy'); } catch(_) {}
+      document.body.removeChild(el);
+      if (cb) cb();
+    }
+
     function terminateHost(hostId, hostName) {
       Alpine.store('confirm').show(hostId, hostName);
     }
