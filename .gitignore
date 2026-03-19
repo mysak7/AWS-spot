@@ -1,0 +1,10 @@
+credentials.json
+.env
+hosts.json
+keys/*.pem
+keys/deleted/*.pem
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
