@@ -1,7 +1,9 @@
 {% set s = host.status %}
 <tr id="row-{{ host.host_id }}" class="hover:bg-slate-800/40 transition-colors {% if s == 'terminated' %}opacity-50{% endif %}">
   <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.host_id[-12:] }}</td>
-  <td class="px-5 py-3 text-slate-300 text-xs font-medium">{{ host.name }}</td>
+  <td class="px-5 py-3">
+    <a href="/host/{{ host.host_id }}" class="text-slate-300 text-xs font-medium hover:text-green-400 transition-colors">{{ host.name }}</a>
+  </td>
   <td class="px-5 py-3 text-slate-200 font-medium">{{ host.instance_type }}</td>
   <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.az }}</td>
   <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
