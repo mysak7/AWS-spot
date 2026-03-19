@@ -8,25 +8,27 @@ KEYS_DIR = ROOT_DIR / "keys"
 DELETED_KEYS_DIR = ROOT_DIR / "keys" / "deleted"
 
 # AWS
-FREE_TIER_TYPES: set[str] = {"t3.micro"}
+FREE_TIER_TYPES: set[str] = {"t3.micro", "t4g.micro"}
 SECURITY_GROUP_NAME = "spot-manager-sg"
 SECURITY_GROUP_DESC = "Spot Manager - SSH only (TCP 22)"
 SSH_USER = "ec2-user"
 AMI_OWNER = "amazon"
-AMI_NAME_FILTER = "al2023-ami-*-x86_64"
+AMI_NAME_FILTER_X86 = "al2023-ami-*-x86_64"
+AMI_NAME_FILTER_ARM = "al2023-ami-*-arm64"
+# Keep legacy name pointing to x86 for any existing callers
+AMI_NAME_FILTER = AMI_NAME_FILTER_X86
 SPOT_HISTORY_HOURS = 1
 
+# Instance types whose architecture is ARM (Graviton) — matched by prefix
+ARM_INSTANCE_PREFIXES: tuple[str, ...] = ("t4g.", "c7g.", "m7g.", "r7g.", "c6g.", "m6g.", "r6g.")
+
 DEFAULT_INSTANCE_TYPES: list[str] = [
-    "t3.micro",
-    "t3.small",
-    "t3.medium",
-    "t3a.micro",
-    "t3a.small",
-    "t3a.medium",
-    "c5.large",
-    "c5.xlarge",
-    "m5.large",
-    "m5.xlarge",
+    "t3.micro",       # 2 vCPU  1 GiB  x86 burstable
+    "t3.small",       # 2 vCPU  2 GiB  x86 burstable
+    "t4g.micro",      # 2 vCPU  1 GiB  ARM Graviton2
+    "t4g.small",      # 2 vCPU  2 GiB  ARM Graviton2
+    "c7i-flex.large", # 2 vCPU  4 GiB  Compute-optimized
+    "m7i-flex.large", # 2 vCPU  8 GiB  General purpose
 ]
 
 DEFAULT_REGIONS: list[str] = [

@@ -8,8 +8,10 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from config import (
-    AMI_NAME_FILTER,
+    AMI_NAME_FILTER_ARM,
+    AMI_NAME_FILTER_X86,
     AMI_OWNER,
+    ARM_INSTANCE_PREFIXES,
     DELETED_KEYS_DIR,
     FREE_TIER_TYPES,
     KEYS_DIR,
@@ -25,15 +27,22 @@ class ProvisionError(Exception):
     pass
 
 
-def get_latest_ami(client: Any) -> str:
-    """Fetch the latest Amazon Linux 2023 x86_64 AMI ID."""
+def _is_arm(instance_type: str) -> bool:
+    return instance_type.startswith(ARM_INSTANCE_PREFIXES)
+
+
+def get_latest_ami(client: Any, instance_type: str = "") -> str:
+    """Fetch the latest Amazon Linux 2023 AMI for the given instance type's architecture."""
+    arm = _is_arm(instance_type)
+    name_filter = AMI_NAME_FILTER_ARM if arm else AMI_NAME_FILTER_X86
+    arch = "arm64" if arm else "x86_64"
     try:
         resp = client.describe_images(
             Owners=[AMI_OWNER],
             Filters=[
-                {"Name": "name", "Values": [AMI_NAME_FILTER]},
+                {"Name": "name", "Values": [name_filter]},
                 {"Name": "state", "Values": ["available"]},
-                {"Name": "architecture", "Values": ["x86_64"]},
+                {"Name": "architecture", "Values": [arch]},
             ],
         )
     except ClientError as e:
@@ -43,7 +52,7 @@ def get_latest_ami(client: Any) -> str:
 
     images = resp.get("Images", [])
     if not images:
-        raise ProvisionError("No Amazon Linux 2023 AMI found in this region")
+        raise ProvisionError(f"No Amazon Linux 2023 {arch} AMI found in this region")
 
     images.sort(key=lambda x: x["CreationDate"], reverse=True)
     return images[0]["ImageId"]
@@ -148,7 +157,7 @@ def provision_instance(
         _p("Ensuring security group...")
         sg_id = ensure_security_group(client)
         _p("Fetching latest AMI and default subnet...")
-        ami_id = get_latest_ami(client)
+        ami_id = get_latest_ami(client, instance_type)
         subnet_id = get_default_subnet(client, az)
 
         # Bid 2x current price for higher fill probability
