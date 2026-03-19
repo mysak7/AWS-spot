@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-8 max-w-7xl mx-auto">
+
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-100">Inventory</h1>
+      <p class="text-slate-400 text-sm mt-1">All provisioned hosts — terminated records are kept for history.</p>
+    </div>
+    <a href="/scan"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
+      + Launch New
+    </a>
+  </div>
+
+  {% if hosts %}
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-800 bg-slate-800/50">
+          <th class="px-5 py-3 text-left">Instance ID</th>
+          <th class="px-5 py-3 text-left">Name</th>
+          <th class="px-5 py-3 text-left">Type</th>
+          <th class="px-5 py-3 text-left">AZ</th>
+          <th class="px-5 py-3 text-left">Public IP</th>
+          <th class="px-5 py-3 text-right">$/hr</th>
+          <th class="px-5 py-3 text-right">$/mo</th>
+          <th class="px-5 py-3 text-left">Status</th>
+          <th class="px-5 py-3 text-left">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for h in hosts %}
+        {% include "partials/host_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
+    <div class="text-4xl mb-4">📋</div>
+    <div class="text-slate-300 font-medium mb-2">No hosts in inventory</div>
+    <div class="text-slate-500 text-sm mb-6">Launch an instance from the Scan page to get started.</div>
+    <a href="/scan" class="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
+      Scan Spot Prices
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

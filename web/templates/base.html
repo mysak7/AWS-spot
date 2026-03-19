@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AWS Spot Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: flex; }
+    .htmx-request.htmx-indicator { display: flex; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+  </style>
+  <script>
+    document.addEventListener('alpine:init', () => {
+      Alpine.store('launch', {
+        open: false, launching: false,
+        region: '', az: '', instance_type: '', price: '', monthly: '', is_ft: false,
+        show(d) { Object.assign(this, d, { open: true, launching: false }); },
+        hide() { this.open = false; this.launching = false; }
+      });
+      Alpine.store('confirm', {
+        open: false, host_id: '', host_name: '',
+        show(id, name) { this.host_id = id; this.host_name = name; this.open = true; },
+        hide() { this.open = false; }
+      });
+    });
+
+    function terminateHost(hostId, hostName) {
+      Alpine.store('confirm').show(hostId, hostName);
+    }
+    async function doTerminate() {
+      const id = Alpine.store('confirm').host_id;
+      Alpine.store('confirm').hide();
+      const row = document.getElementById('row-' + id);
+      if (row) {
+        row.innerHTML = '<td colspan="9" class="px-5 py-3 text-slate-400 text-sm italic">Terminating…</td>';
+      }
+      const resp = await fetch('/terminate/' + id, { method: 'POST' });
+      const html = await resp.text();
+      if (row) row.outerHTML = html;
+    }
+
+    function openLaunchModal(d) {
+      Alpine.store('launch').show(d);
+      // sync hidden input values
+      ['region','az','instance_type','spot_price_usd'].forEach(k => {
+        const el = document.getElementById('li-' + k);
+        if (el) el.value = d[k] ?? d['price'] ?? '';
+      });
+      document.getElementById('li-region').value = d.region;
+      document.getElementById('li-az').value = d.az;
+      document.getElementById('li-instance_type').value = d.instance_type;
+      document.getElementById('li-spot_price_usd').value = d.price;
+    }
+  </script>
+</head>
+<body class="h-full flex bg-slate-950 text-slate-100" style="font-family: Inter, system-ui, sans-serif">
+
+  <!-- Sidebar -->
+  <aside class="w-60 shrink-0 flex flex-col bg-slate-900 border-r border-slate-800">
+    <div class="px-5 pt-6 pb-5 border-b border-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">⚡</span>
+        <div>
+          <div class="text-green-400 font-bold text-base leading-tight">Spot Manager</div>
+          <div class="text-slate-500 text-xs">AWS EC2</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+      <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if active_page == 'dashboard' %}bg-slate-800 text-green-400{% else %}text-slate-400 hover:bg-slate-800/60 hover:text-slate-100{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
+      <a href="/scan" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if active_page == 'scan' %}bg-slate-800 text-green-400{% else %}text-slate-400 hover:bg-slate-800/60 hover:text-slate-100{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        Scan Prices
+      </a>
+      <a href="/inventory" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if active_page == 'inventory' %}bg-slate-800 text-green-400{% else %}text-slate-400 hover:bg-slate-800/60 hover:text-slate-100{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        Inventory
+      </a>
+    </nav>
+
+    <div class="px-5 py-4 border-t border-slate-800">
+      <div class="text-xs text-slate-500 mb-0.5">AWS Account</div>
+      <div class="text-xs font-mono text-slate-300">{{ account_id }}</div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 overflow-auto">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ── Launch Confirm Modal ─────────────────────────────────────────── -->
+  <div x-data x-cloak x-show="$store.launch.open"
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="$store.launch.hide()">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="$store.launch.hide()"></div>
+    <!-- Card -->
+    <div class="relative z-10 w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-100">Launch Instance</h2>
+          <p class="text-slate-400 text-sm mt-0.5" x-text="$store.launch.instance_type + ' · ' + $store.launch.az"></p>
+        </div>
+        <button @click="$store.launch.hide()" class="text-slate-500 hover:text-slate-300 transition-colors text-xl leading-none">&times;</button>
+      </div>
+
+      <!-- Price -->
+      <div class="flex gap-4 bg-slate-800 rounded-xl p-4">
+        <div class="flex-1 text-center">
+          <div class="text-xs text-slate-400 mb-1">Hourly</div>
+          <div class="text-xl font-bold text-green-400" x-text="'$' + $store.launch.price"></div>
+        </div>
+        <div class="w-px bg-slate-700"></div>
+        <div class="flex-1 text-center">
+          <div class="text-xs text-slate-400 mb-1">Monthly est.</div>
+          <div class="text-xl font-bold text-yellow-400" x-text="'$' + $store.launch.monthly"></div>
+        </div>
+      </div>
+
+      <!-- Warnings -->
+      <div x-show="!$store.launch.is_ft" class="flex gap-2 items-start text-yellow-300 bg-yellow-950 border border-yellow-800 rounded-lg px-3 py-2.5 text-xs">
+        <span class="text-base leading-none mt-0.5">⚠</span>
+        <span>This instance type is <strong>not Free Tier eligible</strong>. You will be charged.</span>
+      </div>
+      <div class="flex gap-2 items-start text-orange-300 bg-orange-950 border border-orange-800 rounded-lg px-3 py-2.5 text-xs">
+        <span class="text-base leading-none mt-0.5">⚡</span>
+        <span>Spot Instances can be <strong>interrupted by AWS</strong> with 2 minutes notice.</span>
+      </div>
+
+      <!-- Progress area (shown after confirm) -->
+      <div id="launch-result"></div>
+
+      <!-- Form + Buttons (hidden while launching) -->
+      <div x-show="!$store.launch.launching">
+        <form id="launch-form" hx-post="/launch/start" hx-target="#launch-result" hx-swap="innerHTML">
+          <input id="li-region"         type="hidden" name="region"         value="">
+          <input id="li-az"             type="hidden" name="az"             value="">
+          <input id="li-instance_type"  type="hidden" name="instance_type"  value="">
+          <input id="li-spot_price_usd" type="hidden" name="spot_price_usd" value="">
+          <div class="flex gap-3">
+            <button type="button" @click="$store.launch.hide()"
+              class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" @click="$store.launch.launching = true"
+              class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors font-semibold">
+              Confirm Launch
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Terminate Confirm Modal ─────────────────────────────────────── -->
+  <div x-data x-cloak x-show="$store.confirm.open"
+       class="fixed inset-0 z-50 flex items-center justify-center"
+       @keydown.escape.window="$store.confirm.hide()">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="$store.confirm.hide()"></div>
+    <div class="relative z-10 w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 space-y-5">
+      <h2 class="text-lg font-semibold text-slate-100">Terminate Instance?</h2>
+      <p class="text-slate-400 text-sm">
+        This will permanently terminate
+        <span class="font-mono text-slate-200" x-text="$store.confirm.host_name"></span>.
+        The instance cannot be recovered.
+      </p>
+      <div class="flex gap-3">
+        <button @click="$store.confirm.hide()"
+          class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors">
+          Cancel
+        </button>
+        <button @click="doTerminate()"
+          class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-700 hover:bg-red-600 text-white transition-colors font-semibold">
+          Terminate
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

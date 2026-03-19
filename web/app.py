@@ -1,0 +1,196 @@
+import asyncio
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+from threading import Thread
+from typing import Any
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+BASE_DIR = Path(__file__).parent
+sys.path.insert(0, str(BASE_DIR))           # web/ — for jobs.py
+sys.path.insert(0, str(BASE_DIR.parent / "src"))  # src/ — for all domain modules
+
+from config import DEFAULT_INSTANCE_TYPES, DEFAULT_REGIONS, FREE_TIER_TYPES
+from credentials import load_credentials, validate_credentials
+from instance_catalog import get_instance_info
+from inventory import load_hosts
+from provisioner import provision_instance, terminate_host
+from spot_scanner import scan_spot_prices
+from jobs import create_job, get_job, update_job
+
+creds: dict[str, str] = {}
+account_id: str = ""
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global creds, account_id
+    creds = load_credentials()
+    account_id = validate_credentials(creds)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+def ctx(request: Request, **kw: Any) -> dict[str, Any]:
+    return {"request": request, "account_id": account_id, **kw}
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    hosts = load_hosts()
+    running = [h for h in hosts if h.get("status") == "running"]
+    total_mo = sum(float(h.get("monthly_price_usd", 0)) for h in running)
+    recent = sorted(hosts, key=lambda h: h.get("launched_at", ""), reverse=True)[:6]
+    return templates.TemplateResponse("dashboard.html", ctx(
+        request,
+        recent=recent,
+        total_hosts=len(hosts),
+        running_count=len(running),
+        terminated_count=len([h for h in hosts if h.get("status") == "terminated"]),
+        total_monthly=f"{total_mo:.2f}",
+        active_page="dashboard",
+    ))
+
+
+# ── Scan ──────────────────────────────────────────────────────────────────────
+
+@app.get("/scan", response_class=HTMLResponse)
+async def scan_page(request: Request):
+    return templates.TemplateResponse("scan.html", ctx(
+        request,
+        instance_types=DEFAULT_INSTANCE_TYPES,
+        regions=DEFAULT_REGIONS,
+        free_tier_types=FREE_TIER_TYPES,
+        active_page="scan",
+    ))
+
+
+@app.post("/scan/start", response_class=HTMLResponse)
+async def scan_start(request: Request):
+    form = await request.form()
+    sel_types = list(form.getlist("instance_types")) or DEFAULT_INSTANCE_TYPES
+    sel_regions = list(form.getlist("regions")) or DEFAULT_REGIONS
+    job_id = create_job("scan")
+
+    def run() -> None:
+        try:
+            def on_progress(region: str, i: int, total: int) -> None:
+                update_job(job_id, message=f"Scanning {region}… ({i}/{total})")
+
+            results = scan_spot_prices(sel_types, creds, sel_regions, progress_cb=on_progress)
+            found = list({r["instance_type"] for r in results})
+            catalog = get_instance_info(found, creds, creds["aws_region"]) if found else {}
+            update_job(job_id, status="done", result={"results": results, "catalog": catalog})
+        except Exception as e:
+            update_job(job_id, status="error", error=str(e))
+
+    Thread(target=run, daemon=True).start()
+    return templates.TemplateResponse(
+        "partials/scan_pending.html", ctx(request, job_id=job_id, message="Starting scan…")
+    )
+
+
+@app.get("/scan/status/{job_id}", response_class=HTMLResponse)
+async def scan_status(request: Request, job_id: str):
+    job = get_job(job_id)
+    if job is None:
+        return HTMLResponse('<p class="text-red-400 text-sm">Job not found.</p>')
+    if job["status"] == "running":
+        return templates.TemplateResponse(
+            "partials/scan_pending.html", ctx(request, job_id=job_id, message=job["message"])
+        )
+    if job["status"] == "done":
+        r = job["result"]
+        return templates.TemplateResponse("partials/scan_results.html", ctx(
+            request,
+            results=r["results"],
+            catalog=r["catalog"],
+            free_tier_types=FREE_TIER_TYPES,
+        ))
+    return HTMLResponse(
+        f'<p class="text-red-400 text-sm p-3 rounded-lg bg-red-950 border border-red-800">'
+        f'Scan failed: {job.get("error")}</p>'
+    )
+
+
+# ── Launch ────────────────────────────────────────────────────────────────────
+
+@app.post("/launch/start", response_class=HTMLResponse)
+async def launch_start(request: Request):
+    form = await request.form()
+    region = str(form["region"])
+    az = str(form["az"])
+    instance_type = str(form["instance_type"])
+    spot_price_usd = str(form["spot_price_usd"])
+    job_id = create_job("launch")
+
+    def run() -> None:
+        def on_progress(msg: str) -> None:
+            update_job(job_id, message=msg)
+        try:
+            host = provision_instance(region, az, instance_type, spot_price_usd, creds, on_progress)
+            update_job(job_id, status="done", result=host)
+        except Exception as e:
+            update_job(job_id, status="error", error=str(e))
+
+    Thread(target=run, daemon=True).start()
+    return templates.TemplateResponse(
+        "partials/launch_pending.html", ctx(request, job_id=job_id, job=get_job(job_id))
+    )
+
+
+@app.get("/launch/status/{job_id}", response_class=HTMLResponse)
+async def launch_status(request: Request, job_id: str):
+    job = get_job(job_id)
+    if job is None:
+        return HTMLResponse('<p class="text-red-400 text-sm">Job not found.</p>')
+    if job["status"] == "running":
+        return templates.TemplateResponse(
+            "partials/launch_pending.html", ctx(request, job_id=job_id, job=job)
+        )
+    if job["status"] == "done":
+        return templates.TemplateResponse(
+            "partials/launch_success.html", ctx(request, host=job["result"])
+        )
+    return HTMLResponse(
+        f'<div class="text-red-400 text-sm p-3 rounded-lg bg-red-950 border border-red-800">'
+        f'Launch failed: {job.get("error")}</div>'
+    )
+
+
+# ── Inventory ─────────────────────────────────────────────────────────────────
+
+@app.get("/inventory", response_class=HTMLResponse)
+async def inventory_page(request: Request):
+    hosts = load_hosts()
+    return templates.TemplateResponse("inventory.html", ctx(
+        request, hosts=hosts, active_page="inventory"
+    ))
+
+
+@app.post("/terminate/{host_id}", response_class=HTMLResponse)
+async def do_terminate(request: Request, host_id: str):
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse(
+            f'<tr id="row-{host_id}"><td colspan="9" class="text-red-400 p-3 text-sm">'
+            f'Host {host_id} not found.</td></tr>'
+        )
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, terminate_host, host, creds)
+        host = {**host, "status": "terminated"}
+    except Exception as e:
+        host = {**host, "_error": str(e)}
+    return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))

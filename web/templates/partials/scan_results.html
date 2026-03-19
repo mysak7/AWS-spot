@@ -1,0 +1,65 @@
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+  <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+    <div>
+      <span class="font-semibold text-slate-200 text-sm">Results</span>
+      <span class="ml-2 text-xs text-slate-500">{{ results | length }} entries · sorted cheapest first</span>
+    </div>
+    <div class="text-xs text-slate-500">Click <strong class="text-slate-300">Launch</strong> on any row to provision</div>
+  </div>
+  {% if results %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-800 bg-slate-800/50">
+          <th class="px-4 py-3 text-left w-8">#</th>
+          <th class="px-4 py-3 text-left">Region</th>
+          <th class="px-4 py-3 text-left">AZ</th>
+          <th class="px-4 py-3 text-left">Type</th>
+          <th class="px-4 py-3 text-right">vCPU</th>
+          <th class="px-4 py-3 text-right">RAM</th>
+          <th class="px-4 py-3 text-right">$/hr</th>
+          <th class="px-4 py-3 text-right">$/mo</th>
+          <th class="px-4 py-3 text-center">FT</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for row in results[:40] %}
+        {% set itype = row.instance_type %}
+        {% set info = catalog.get(itype, {}) %}
+        {% set is_ft = itype in free_tier_types %}
+        {% set monthly = (row.spot_price_usd | float * 720) | round(2) %}
+        <tr class="hover:bg-slate-800/40 transition-colors">
+          <td class="px-4 py-3 text-slate-600 text-xs">{{ loop.index }}</td>
+          <td class="px-4 py-3 text-slate-400 font-mono text-xs">{{ row.region }}</td>
+          <td class="px-4 py-3 text-slate-400 font-mono text-xs">{{ row.az }}</td>
+          <td class="px-4 py-3 text-slate-200 font-medium">{{ itype }}</td>
+          <td class="px-4 py-3 text-right text-slate-300">{{ info.get('vcpu', '?') }}</td>
+          <td class="px-4 py-3 text-right text-slate-300 text-xs">{{ info.get('memory_gib', '?') }} GiB</td>
+          <td class="px-4 py-3 text-right font-mono text-green-400 font-semibold">${{ row.spot_price_usd }}</td>
+          <td class="px-4 py-3 text-right font-mono text-yellow-400">${{ monthly }}</td>
+          <td class="px-4 py-3 text-center">
+            {% if is_ft %}<span class="text-green-400 text-xs">✓</span>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <button onclick="openLaunchModal({
+                region: '{{ row.region }}',
+                az: '{{ row.az }}',
+                instance_type: '{{ itype }}',
+                price: '{{ row.spot_price_usd }}',
+                monthly: '{{ monthly }}',
+                is_ft: {{ 'true' if is_ft else 'false' }}
+              })"
+              class="px-3 py-1.5 text-xs font-semibold rounded-md bg-green-700 hover:bg-green-600 text-white transition-colors whitespace-nowrap">
+              Launch →
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="p-10 text-center text-slate-500 text-sm">No spot prices found for the selected filters.</div>
+  {% endif %}
+</div>

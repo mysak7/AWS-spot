@@ -1,0 +1,41 @@
+{% set s = host.status %}
+<tr id="row-{{ host.host_id }}" class="hover:bg-slate-800/40 transition-colors {% if s == 'terminated' %}opacity-50{% endif %}">
+  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.host_id[-12:] }}</td>
+  <td class="px-5 py-3 text-slate-300 text-xs">{{ host.name }}</td>
+  <td class="px-5 py-3 text-slate-200 font-medium">{{ host.instance_type }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.az }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
+  <td class="px-5 py-3 text-right font-mono text-green-400">${{ host.spot_price_usd }}</td>
+  <td class="px-5 py-3 text-right font-mono text-yellow-400">${{ host.monthly_price_usd or '?' }}</td>
+  <td class="px-5 py-3">
+    {% if s == 'running' %}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> running
+      </span>
+    {% elif s == 'terminated' %}
+      <span class="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-500 border border-slate-700">terminated</span>
+    {% elif s == 'shutting-down' %}
+      <span class="px-2 py-0.5 rounded-full text-xs bg-orange-900/60 text-orange-300 border border-orange-800">shutting down</span>
+    {% else %}
+      <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-900/60 text-yellow-300 border border-yellow-800">{{ s }}</span>
+    {% endif %}
+    {% if host._error is defined %}
+      <div class="text-red-400 text-xs mt-1">{{ host._error }}</div>
+    {% endif %}
+  </td>
+  <td class="px-5 py-3">
+    {% if s == 'running' %}
+    <div class="flex items-center gap-2">
+      <button onclick="navigator.clipboard.writeText('{{ host.ssh_cmd }}')"
+              title="{{ host.ssh_cmd }}"
+              class="px-2.5 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+        SSH
+      </button>
+      <button onclick="terminateHost('{{ host.host_id }}', '{{ host.name }}')"
+              class="px-2.5 py-1 text-xs rounded bg-red-900 hover:bg-red-800 text-red-300 transition-colors">
+        Terminate
+      </button>
+    </div>
+    {% endif %}
+  </td>
+</tr>

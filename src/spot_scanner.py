@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -34,6 +35,7 @@ def scan_spot_prices(
     instance_types: list[str],
     creds: dict[str, str],
     regions: list[str] | None = None,
+    progress_cb: Callable[[str, int, int], None] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Scan spot prices across regions for the given instance types.
@@ -45,7 +47,8 @@ def scan_spot_prices(
     start_time = datetime.now(timezone.utc) - timedelta(hours=SPOT_HISTORY_HOURS)
     results: list[dict[str, Any]] = []
 
-    for region in regions:
+    total = len(regions)
+    for i, region in enumerate(regions, 1):
         client = get_client("ec2", region, creds)
         # Track latest price per (instance_type, az) pair
         latest: dict[tuple[str, str], dict[str, Any]] = {}
@@ -70,9 +73,11 @@ def scan_spot_prices(
                         }
         except ClientError:
             # Skip regions we can't access (not opted in, permission denied, etc.)
-            continue
+            pass
 
         results.extend(latest.values())
+        if progress_cb:
+            progress_cb(region, i, total)
 
     results.sort(key=lambda x: float(x["spot_price_usd"]))
     return results

@@ -1,5 +1,6 @@
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -101,14 +102,20 @@ def provision_instance(
     instance_type: str,
     spot_price_usd: str,
     creds: dict[str, str],
+    progress_cb: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """
     Full provisioning flow: key pair → security group → AMI → spot request → wait.
     Saves host to inventory and returns the host record.
     """
+    def _p(msg: str) -> None:
+        if progress_cb:
+            progress_cb(msg)
+
     client = get_client("ec2", region, creds)
     key_name = f"spot-{uuid.uuid4()}"
 
+    _p("Creating key pair...")
     try:
         kp_resp = client.create_key_pair(KeyName=key_name)
     except ClientError as e:
@@ -119,12 +126,15 @@ def provision_instance(
     key_path = _write_key_file(key_name, kp_resp["KeyMaterial"])
 
     try:
+        _p("Ensuring security group...")
         sg_id = ensure_security_group(client)
+        _p("Fetching latest AMI...")
         ami_id = get_latest_ami(client)
 
         # Bid 2x current price for higher fill probability
         bid = f"{float(spot_price_usd) * 2:.6f}"
 
+        _p("Submitting spot request...")
         try:
             sir_resp = client.request_spot_instances(
                 InstanceCount=1,
@@ -144,8 +154,11 @@ def provision_instance(
             ) from e
 
         sir_id = sir_resp["SpotInstanceRequests"][0]["SpotInstanceRequestId"]
+        _p("Waiting for spot request fulfillment...")
         instance_id = _wait_for_fulfillment(client, sir_id)
+        _p("Waiting for instance to reach running state...")
         public_ip = _wait_for_running(client, instance_id)
+        _p("Saving to inventory...")
 
         rel_key = f"keys/{key_name}.pem"
         ssh_cmd = f"ssh -i {rel_key} {SSH_USER}@{public_ip}"
