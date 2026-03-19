@@ -190,7 +190,8 @@ def provision_instance(
         _p("Saving to inventory...")
 
         rel_key = f"keys/{key_name}.pem"
-        ssh_cmd = f"ssh -i {rel_key} {SSH_USER}@{public_ip}"
+        abs_key = str(KEYS_DIR / f"{key_name}.pem")
+        ssh_cmd = f"ssh -i {abs_key} {SSH_USER}@{public_ip}"
 
         host: dict[str, Any] = {
             "host_id": instance_id,
