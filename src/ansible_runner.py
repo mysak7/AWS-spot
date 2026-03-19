@@ -1,6 +1,7 @@
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -21,14 +22,22 @@ def _find_terminal() -> str | None:
     return None
 
 
-def _build_inventory(host: dict[str, Any]) -> str:
+def _safe_key_copy(key_file: str) -> str:
+    """Copy key to a temp file with 0400 permissions. Returns temp path."""
+    fd, tmp = tempfile.mkstemp(suffix=".pem", prefix="ansible-key-")
+    os.close(fd)
+    shutil.copy2(key_file, tmp)
+    os.chmod(tmp, stat.S_IRUSR)  # 0400
+    return tmp
+
+
+def _build_inventory(host: dict[str, Any], key_file: str) -> str:
     ip = host["public_ip"]
-    key_file = str(ROOT_DIR / host["key_file"])
     return (
         f"[all]\n"
         f"{ip} ansible_user={SSH_USER} "
         f"ansible_ssh_private_key_file={key_file} "
-        f"ansible_ssh_common_args='-o StrictHostKeyChecking=no'\n"
+        f"ansible_ssh_common_args='-o StrictHostKeyChecking=no -o IdentitiesOnly=yes'\n"
     )
 
 
@@ -48,10 +57,12 @@ def run_ansible_setup(host: dict[str, Any], netbird_key: str, new_window: bool) 
     if not ANSIBLE_PLAYBOOK.exists():
         raise AnsibleError(f"Playbook not found: {ANSIBLE_PLAYBOOK}")
 
+    src_key = str(ROOT_DIR / host["key_file"])
+    tmp_key = _safe_key_copy(src_key)
     inv_fd, inv_path = tempfile.mkstemp(suffix=".ini", prefix="spot-inv-")
     try:
         with os.fdopen(inv_fd, "w") as f:
-            f.write(_build_inventory(host))
+            f.write(_build_inventory(host, tmp_key))
 
         playbook = str(ANSIBLE_PLAYBOOK)
         netbird_arg = f"netbird_setup_key={netbird_key}"
@@ -69,7 +80,7 @@ def run_ansible_setup(host: dict[str, Any], netbird_key: str, new_window: bool) 
                 f"ansible-playbook {shlex.quote(playbook)} "
                 f"-i {shlex.quote(inv_path)} "
                 f"-e {shlex.quote(netbird_arg)}; "
-                f"rm -f {shlex.quote(inv_path)}; "
+                f"rm -f {shlex.quote(inv_path)} {shlex.quote(tmp_key)}; "
                 f"echo; echo '--- Finished. Press Enter to close ---'; read _"
             )
 
@@ -77,7 +88,7 @@ def run_ansible_setup(host: dict[str, Any], netbird_key: str, new_window: bool) 
                 subprocess.Popen([term, "--", "bash", "-c", shell_cmd])
             else:
                 subprocess.Popen([term, "-e", f"bash -c {shlex.quote(shell_cmd)}"])
-            # inv_path will be deleted by the shell command inside the new window
+            # inv_path and tmp_key will be deleted by the shell command inside the new window
         else:
             try:
                 subprocess.run(
@@ -88,11 +99,13 @@ def run_ansible_setup(host: dict[str, Any], netbird_key: str, new_window: bool) 
                 raise AnsibleError(f"ansible-playbook exited with code {e.returncode}")
             finally:
                 Path(inv_path).unlink(missing_ok=True)
+                Path(tmp_key).unlink(missing_ok=True)
 
     except Exception:
-        # Clean up inv file if new_window path was not reached
+        # Clean up temp files if new_window path was not reached
         if Path(inv_path).exists():
             Path(inv_path).unlink(missing_ok=True)
+        Path(tmp_key).unlink(missing_ok=True)
         raise
 
 
@@ -110,10 +123,12 @@ def run_ansible_setup_web(
     if not ANSIBLE_PLAYBOOK.exists():
         raise AnsibleError(f"Playbook not found: {ANSIBLE_PLAYBOOK}")
 
+    src_key = str(ROOT_DIR / host["key_file"])
+    tmp_key = _safe_key_copy(src_key)
     inv_fd, inv_path = tempfile.mkstemp(suffix=".ini", prefix="spot-inv-")
     try:
         with os.fdopen(inv_fd, "w") as f:
-            f.write(_build_inventory(host))
+            f.write(_build_inventory(host, tmp_key))
 
         proc = subprocess.Popen(
             [
@@ -135,3 +150,4 @@ def run_ansible_setup_web(
             raise AnsibleError(f"ansible-playbook exited with code {proc.returncode}")
     finally:
         Path(inv_path).unlink(missing_ok=True)
+        Path(tmp_key).unlink(missing_ok=True)

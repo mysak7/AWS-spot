@@ -2,7 +2,6 @@
   hosts: all
   become: yes
   vars:
-    ansible_user: mi
     ansible_python_interpreter: /usr/bin/python3
     # Ensure this is defined in your inventory or via -e "netbird_setup_key=..."
     # netbird_setup_key: "YOUR_KEY_HERE"
