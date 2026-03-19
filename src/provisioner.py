@@ -198,7 +198,6 @@ def provision_instance(
         public_ip = _wait_for_running(client, instance_id)
         _p("Saving to inventory...")
 
-        rel_key = f"keys/{key_name}.pem"
         abs_key = str(KEYS_DIR / f"{key_name}.pem")
         ssh_cmd = f"ssh -i {abs_key} {SSH_USER}@{public_ip}"
 
@@ -209,7 +208,7 @@ def provision_instance(
             "az": az,
             "instance_type": instance_type,
             "public_ip": public_ip,
-            "key_file": rel_key,
+            "key_file": abs_key,
             "key_name": key_name,
             "ssh_cmd": ssh_cmd,
             "launched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
