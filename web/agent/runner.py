@@ -10,25 +10,25 @@ from .ssh_client import SSHClient
 MAX_STEPS = 40
 
 SYSTEM_PROMPT = """\
-You are a Linux system administration agent with SSH access to a remote EC2 instance \
-running Amazon Linux 2023. You are logged in as ec2-user with full sudo access.
+You control a remote EC2 spot instance via SSH. You do NOT have direct access to any \
+local machine or filesystem. Every command you want to run must be sent as a JSON object \
+so the system can SSH it to the remote server and return the output to you.
 
-Execute the user's instructions step by step. After each step, decide what to do next.
+YOU MUST reply with ONLY a raw JSON object — no markdown, no backticks, no explanation, \
+no prose before or after. Just the JSON.
 
-IMPORTANT: Always respond with ONLY a single JSON object — no other text before or after it.
+To run a command on the remote server:
+{"action": "run", "command": "the shell command"}
 
-To run a shell command:
-{"action": "run", "command": "<shell command>"}
-
-When fully done:
-{"action": "done", "message": "<short completion message>"}
+When the task is fully complete:
+{"action": "done", "message": "brief description of what was done"}
 
 Rules:
-- One command at a time; wait for output before deciding next step
+- One command per reply
+- Wait for the output before deciding the next command
 - Use sudo when needed
-- If a command fails, diagnose and fix before moving on
-- Be efficient — avoid unnecessary commands
-- When all instructions are complete, respond with the "done" action
+- If a command fails, fix it before moving on
+- Do not describe what you are doing — just output the JSON
 """
 
 
@@ -67,6 +67,7 @@ def run_agent(
 
     messages: list[dict[str, Any]] = [{"role": "user", "content": instruction}]
     steps = 0
+    parse_failures = 0
     last_message = ""
 
     try:
@@ -80,10 +81,20 @@ def run_agent(
             action = _parse_action(raw)
 
             if action is None:
-                # Unparseable — log as agent text and stop
-                on_log({"type": "agent", "content": raw.strip()})
-                last_message = raw.strip()
-                break
+                parse_failures += 1
+                on_log({"type": "agent", "content": f"[raw] {raw.strip()}"})
+                if parse_failures >= 2:
+                    last_message = raw.strip()
+                    break
+                # Ask Claude to retry with proper JSON
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({
+                    "role": "user",
+                    "content": 'Reply with ONLY a JSON object. Example: {"action": "run", "command": "uname -a"}',
+                })
+                continue
+
+            parse_failures = 0
 
             if action.get("action") == "done":
                 last_message = action.get("message", "Done.")
@@ -107,7 +118,6 @@ def run_agent(
 
                 on_log({"type": "output", "content": output})
 
-                # Append assistant turn + tool result as user message
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({
                     "role": "user",
@@ -115,7 +125,6 @@ def run_agent(
                 })
                 steps += 1
             else:
-                # Unknown action — log and stop
                 on_log({"type": "agent", "content": raw.strip()})
                 last_message = raw.strip()
                 break
