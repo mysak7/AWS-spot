@@ -32,3 +32,13 @@ def update_job(job_id: str, **kwargs: Any) -> None:
     with _lock:
         if job_id in _jobs:
             _jobs[job_id].update(kwargs)
+
+
+def append_job_line(job_id: str, line: str) -> None:
+    """Append a line to job result (list) and update message."""
+    with _lock:
+        if job_id in _jobs:
+            r = _jobs[job_id].get("result")
+            if isinstance(r, list):
+                r.append(line)
+            _jobs[job_id]["message"] = line[:120]

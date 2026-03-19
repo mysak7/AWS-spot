@@ -3,10 +3,11 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from config import ANSIBLE_PLAYBOOK, SSH_USER
+from config import ANSIBLE_PLAYBOOK, ROOT_DIR, SSH_USER
 
 
 class AnsibleError(Exception):
@@ -22,7 +23,7 @@ def _find_terminal() -> str | None:
 
 def _build_inventory(host: dict[str, Any]) -> str:
     ip = host["public_ip"]
-    key_file = host["key_file"]
+    key_file = str(ROOT_DIR / host["key_file"])
     return (
         f"[all]\n"
         f"{ip} ansible_user={SSH_USER} "
@@ -93,3 +94,44 @@ def run_ansible_setup(host: dict[str, Any], netbird_key: str, new_window: bool) 
         if Path(inv_path).exists():
             Path(inv_path).unlink(missing_ok=True)
         raise
+
+
+def run_ansible_setup_web(
+    host: dict[str, Any],
+    netbird_key: str,
+    on_line: Callable[[str], None],
+) -> None:
+    """Run playbook in a subprocess, streaming each output line to *on_line*."""
+    if not shutil.which("ansible-playbook"):
+        raise AnsibleError(
+            "ansible-playbook not found in PATH. "
+            "Install Ansible: pip install ansible  or  apt install ansible"
+        )
+    if not ANSIBLE_PLAYBOOK.exists():
+        raise AnsibleError(f"Playbook not found: {ANSIBLE_PLAYBOOK}")
+
+    inv_fd, inv_path = tempfile.mkstemp(suffix=".ini", prefix="spot-inv-")
+    try:
+        with os.fdopen(inv_fd, "w") as f:
+            f.write(_build_inventory(host))
+
+        proc = subprocess.Popen(
+            [
+                "ansible-playbook",
+                str(ANSIBLE_PLAYBOOK),
+                "-i", inv_path,
+                "-e", f"netbird_setup_key={netbird_key}",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            on_line(line.rstrip())
+        proc.wait()
+        if proc.returncode != 0:
+            raise AnsibleError(f"ansible-playbook exited with code {proc.returncode}")
+    finally:
+        Path(inv_path).unlink(missing_ok=True)

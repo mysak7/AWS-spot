@@ -116,5 +116,34 @@ Examples:
     </div>
 
   </div>
+
+  <!-- Ansible Setup -->
+  {% if host.status == 'running' %}
+  <div id="ansible-setup" class="mt-8 bg-slate-900 border border-slate-800 rounded-xl p-6">
+    <h2 class="font-semibold text-slate-200 mb-1">Ansible Setup</h2>
+    <p class="text-xs text-slate-500 mb-5">Runs <code class="text-slate-400">ansible/setup.yml</code> — installs Docker, NetBird VPN, and Prometheus monitoring stack.</p>
+
+    <form hx-post="/host/{{ host.host_id }}/ansible"
+          hx-target="#ansible-result"
+          hx-swap="innerHTML">
+      <div class="flex gap-3 items-end">
+        <div class="flex-1">
+          <label class="block text-xs text-slate-400 mb-1.5">NetBird Setup Key</label>
+          <input type="text" name="netbird_key" value="{{ netbird_key }}" required
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100
+                   placeholder-slate-600 focus:outline-none focus:border-purple-600 font-mono">
+        </div>
+        <button type="submit"
+          class="px-5 py-2.5 bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold rounded-lg transition-colors shrink-0">
+          Run Setup
+        </button>
+      </div>
+    </form>
+
+    <div id="ansible-result" class="mt-4"></div>
+  </div>
+  {% endif %}
+
 </div>
 {% endblock %}

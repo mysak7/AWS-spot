@@ -200,6 +200,12 @@
           <input id="li-az"             type="hidden" name="az"             value="">
           <input id="li-instance_type"  type="hidden" name="instance_type"  value="">
           <input id="li-spot_price_usd" type="hidden" name="spot_price_usd" value="">
+          <div class="mb-4">
+            <label class="block text-xs text-slate-400 mb-1.5">Instance name <span class="text-slate-600">(optional)</span></label>
+            <input type="text" name="name" placeholder="my-server"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100
+                     placeholder-slate-600 focus:outline-none focus:border-green-600">
+          </div>
           <div class="flex gap-3">
             <button type="button" @click="$store.launch.hide()"
               class="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors">

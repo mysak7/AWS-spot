@@ -22,7 +22,7 @@ from instance_catalog import get_instance_info
 from inventory import load_hosts
 from provisioner import provision_instance, terminate_host
 from spot_scanner import scan_spot_prices
-from jobs import create_job, get_job, update_job
+from jobs import create_job, get_job, update_job, append_job_line
 from config_store import load_config, save_config
 from agent.sessions import (
     create_session, append_log, finish_session,
@@ -145,13 +145,15 @@ async def launch_start(request: Request):
     az = str(form["az"])
     instance_type = str(form["instance_type"])
     spot_price_usd = str(form["spot_price_usd"])
+    name = str(form.get("name", "")).strip()
     job_id = create_job("launch")
 
     def run() -> None:
         def on_progress(msg: str) -> None:
             update_job(job_id, message=msg)
         try:
-            host = provision_instance(region, az, instance_type, spot_price_usd, creds, on_progress)
+            host = provision_instance(region, az, instance_type, spot_price_usd, creds,
+                                      name=name, progress_cb=on_progress)
             update_job(job_id, status="done", result=host)
         except Exception as e:
             update_job(job_id, status="error", error=str(e))
@@ -278,6 +280,54 @@ async def do_terminate(request: Request, host_id: str):
     return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))
 
 
+# ── Ansible Setup ─────────────────────────────────────────────────────────────
+
+@app.post("/host/{host_id}/ansible", response_class=HTMLResponse)
+async def host_ansible_start(request: Request, host_id: str):
+    form = await request.form()
+    netbird_key = str(form.get("netbird_key", "")).strip()
+
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse('<p class="text-red-400 text-sm">Host not found.</p>')
+
+    job_id = create_job("ansible")
+    update_job(job_id, result=[])
+
+    def run() -> None:
+        from ansible_runner import run_ansible_setup_web, AnsibleError
+        def on_line(line: str) -> None:
+            append_job_line(job_id, line)
+        try:
+            run_ansible_setup_web(host, netbird_key, on_line)
+            update_job(job_id, status="done")
+        except Exception as e:
+            update_job(job_id, status="error", error=str(e))
+
+    Thread(target=run, daemon=True).start()
+    return templates.TemplateResponse(
+        "partials/ansible_pending.html",
+        ctx(request, job_id=job_id, host_id=host_id, job=get_job(job_id)),
+    )
+
+
+@app.get("/host/{host_id}/ansible/status/{job_id}", response_class=HTMLResponse)
+async def host_ansible_status(request: Request, host_id: str, job_id: str):
+    job = get_job(job_id)
+    if job is None:
+        return HTMLResponse('<p class="text-red-400 text-sm">Job not found.</p>')
+    if job["status"] == "running":
+        return templates.TemplateResponse(
+            "partials/ansible_pending.html",
+            ctx(request, job_id=job_id, host_id=host_id, job=job),
+        )
+    return templates.TemplateResponse(
+        "partials/ansible_result.html",
+        ctx(request, job=job, success=(job["status"] == "done")),
+    )
+
+
 # ── Host workbench ────────────────────────────────────────────────────────────
 
 @app.get("/host/{host_id}", response_class=HTMLResponse)
@@ -287,8 +337,11 @@ async def host_detail(request: Request, host_id: str):
     if not host:
         return HTMLResponse('<p class="text-red-400 p-8">Host not found.</p>')
     sessions = list_sessions(host_id)
+    from settings import load_settings
+    netbird_key = load_settings().get("netbird_setup_key", "")
     return templates.TemplateResponse("host_detail.html", ctx(
-        request, host=host, sessions=sessions, active_page="inventory",
+        request, host=host, sessions=sessions, netbird_key=netbird_key,
+        active_page="inventory",
     ))
 
 
@@ -416,16 +469,22 @@ async def llm_page(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, saved: bool = False):
+    from settings import load_settings
     return templates.TemplateResponse("settings.html", ctx(
-        request, config=load_config(), saved=saved, active_page="settings",
+        request, config=load_config(), settings=load_settings(),
+        saved=saved, active_page="settings",
     ))
 
 
 @app.post("/settings", response_class=HTMLResponse)
 async def settings_save(request: Request):
+    from settings import load_settings, save_settings
+    from fastapi.responses import RedirectResponse
     form = await request.form()
     save_config({"claude_bin": str(form.get("claude_bin", "")).strip()})
-    from fastapi.responses import RedirectResponse
+    s = load_settings()
+    s["netbird_setup_key"] = str(form.get("netbird_setup_key", "")).strip()
+    save_settings(s)
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 

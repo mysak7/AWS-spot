@@ -1,0 +1,18 @@
+{% if success %}
+<div class="flex items-center gap-2 text-xs text-green-300 mb-2">
+  <span class="text-base leading-none">✓</span>
+  <span class="font-medium">Ansible setup completed successfully.</span>
+</div>
+{% else %}
+<div class="flex items-center gap-2 text-xs text-red-300 mb-2">
+  <span class="text-base leading-none">✗</span>
+  <span class="font-medium">Ansible setup failed: {{ job.error }}</span>
+</div>
+{% endif %}
+{% if job.result %}
+<div class="bg-black/50 border border-slate-700 rounded-lg p-3 font-mono text-xs text-slate-300 overflow-auto max-h-96 space-y-0.5">
+  {% for line in job.result %}
+  <div class="whitespace-pre-wrap break-all leading-4">{{ line }}</div>
+  {% endfor %}
+</div>
+{% endif %}

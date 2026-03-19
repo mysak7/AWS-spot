@@ -4,7 +4,7 @@
 
   <div class="mb-8">
     <h1 class="text-xl font-semibold text-slate-100">Settings</h1>
-    <p class="text-sm text-slate-500 mt-1">Configure the local Claude Code binary used by the agent workbench.</p>
+    <p class="text-sm text-slate-500 mt-1">Configure Claude Code and Ansible defaults.</p>
   </div>
 
   {% if saved %}
@@ -13,10 +13,9 @@
   </div>
   {% endif %}
 
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
-    <h2 class="text-sm font-semibold text-slate-200 mb-5 uppercase tracking-wider">Claude Code</h2>
-
-    <form method="POST" action="/settings">
+  <form method="POST" action="/settings">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
+      <h2 class="text-sm font-semibold text-slate-200 mb-5 uppercase tracking-wider">Claude Code</h2>
       <div>
         <label class="block text-xs text-slate-400 mb-1.5">Claude binary command</label>
         <input type="text" name="claude_bin" value="{{ config.claude_bin }}" required
@@ -28,30 +27,39 @@
           <code class="text-slate-500">claude</code> is not in the container PATH.
         </p>
       </div>
+    </div>
 
-      <div class="mt-6 flex items-center gap-3">
-        <button type="submit"
-          class="px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
-          Save
-        </button>
-        <button type="button" id="test-btn" onclick="testConnection()"
-          class="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">
-          Test
-        </button>
-        <span id="test-result" class="text-sm"></span>
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
+      <h2 class="text-sm font-semibold text-slate-200 mb-5 uppercase tracking-wider">Ansible Setup</h2>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1.5">NetBird Setup Key</label>
+        <input type="text" name="netbird_setup_key" value="{{ settings.netbird_setup_key }}"
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100
+                 placeholder-slate-600 focus:outline-none focus:border-purple-600 font-mono">
+        <p class="text-xs text-slate-600 mt-1.5">Pre-fills the NetBird key on the host detail Ansible Setup panel.</p>
       </div>
-    </form>
-  </div>
+    </div>
 
-  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+    <div class="flex items-center gap-3">
+      <button type="submit"
+        class="px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        Save
+      </button>
+      <button type="button" id="test-btn" onclick="testConnection()"
+        class="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">
+        Test Claude
+      </button>
+      <span id="test-result" class="text-sm"></span>
+    </div>
+  </form>
+
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mt-6">
     <h2 class="text-sm font-semibold text-slate-200 mb-4 uppercase tracking-wider">How it works</h2>
     <div class="space-y-2 text-sm text-slate-400">
       <p>The agent workbench runs Claude Code locally as a subprocess with <code class="text-slate-300 font-mono text-xs">--output-format stream-json</code>.</p>
       <p>Claude uses the <strong class="text-slate-300">Bash</strong> tool to SSH into the target EC2 instance and execute commands to complete the task.</p>
       <p class="font-mono text-xs text-slate-500 mt-3">{{ config.claude_bin }} -p "…" --allowedTools Bash --max-turns 30</p>
-      <p class="text-xs text-slate-600 mt-3">
-        Claude config: <span class="font-mono text-slate-500">/root/.claude</span> (mounted from host <span class="font-mono text-slate-500">~/.claude</span>)
-      </p>
     </div>
   </div>
 
@@ -76,7 +84,7 @@
       result.textContent = '✗ ' + e.message;
       result.className = 'text-sm text-red-400';
     } finally {
-      btn.disabled = false; btn.textContent = 'Test';
+      btn.disabled = false; btn.textContent = 'Test Claude';
     }
   }
 </script>
