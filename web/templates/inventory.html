@@ -1,16 +1,48 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="p-8 max-w-7xl mx-auto">
+<div class="p-8 max-w-7xl mx-auto" x-data>
 
   <div class="mb-6 flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-slate-100">Inventory</h1>
       <p class="text-slate-400 text-sm mt-1">All provisioned hosts — terminated records are kept for history.</p>
     </div>
-    <a href="/scan"
-       class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
-      + Launch New
-    </a>
+    <div class="flex items-center gap-3">
+
+      <!-- Column picker -->
+      <div class="relative">
+        <button @click="$store.cols.open = !$store.cols.open"
+                class="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+          Columns
+        </button>
+        <div x-show="$store.cols.open" x-cloak
+             @click.outside="$store.cols.open = false"
+             class="absolute right-0 mt-1 z-30 bg-slate-900 border border-slate-700 rounded-xl shadow-xl p-3 w-44 space-y-1">
+          {% set col_labels = [
+            ('id','Instance ID'),('name','Name'),('type','Type'),('az','AZ'),
+            ('ip','Public IP'),('hr','$/hr'),('mo','$/mo'),('spend','Total Spend'),
+            ('launched','Launched'),('status','Status'),('notes','Notes'),('actions','Actions')
+          ] %}
+          {% for key, label in col_labels %}
+          <label class="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-800 cursor-pointer text-sm text-slate-300">
+            <input type="checkbox" :checked="$store.cols.visible.{{ key }}"
+                   @change="$store.cols.toggle('{{ key }}')"
+                   class="w-3.5 h-3.5 accent-green-500">
+            {{ label }}
+          </label>
+          {% endfor %}
+          <div class="border-t border-slate-800 mt-2 pt-2">
+            <button @click="$store.cols.reset()" class="text-xs text-slate-500 hover:text-slate-300 px-2 transition-colors">Reset defaults</button>
+          </div>
+        </div>
+      </div>
+
+      <a href="/scan"
+         class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
+        + Launch New
+      </a>
+    </div>
   </div>
 
   {% if hosts %}
@@ -19,18 +51,18 @@
     <table class="w-full text-sm min-w-max">
       <thead>
         <tr class="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-800 bg-slate-800/50">
-          <th class="px-5 py-3 text-left">Instance ID</th>
-          <th class="px-5 py-3 text-left">Name</th>
-          <th class="px-5 py-3 text-left">Type</th>
-          <th class="px-5 py-3 text-left">AZ</th>
-          <th class="px-5 py-3 text-left">Public IP</th>
-          <th class="px-5 py-3 text-right">$/hr</th>
-          <th class="px-5 py-3 text-right">$/mo</th>
-          <th class="px-5 py-3 text-right">Total spent</th>
-          <th class="px-5 py-3 text-left">Launched</th>
-          <th class="px-5 py-3 text-left">Status</th>
-          <th class="px-5 py-3 text-left">Notes</th>
-          <th class="px-5 py-3 text-left">Actions</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.id}">Instance ID</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.name}">Name</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.type}">Type</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.az}">AZ</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.ip}">Public IP</th>
+          <th class="px-5 py-3 text-right" :class="{'hidden': !$store.cols.visible.hr}">$/hr</th>
+          <th class="px-5 py-3 text-right" :class="{'hidden': !$store.cols.visible.mo}">$/mo</th>
+          <th class="px-5 py-3 text-right" :class="{'hidden': !$store.cols.visible.spend}">Total spent</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.launched}">Launched</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.status}">Status</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.notes}">Notes</th>
+          <th class="px-5 py-3 text-left" :class="{'hidden': !$store.cols.visible.actions}">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-800">

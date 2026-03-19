@@ -1,19 +1,19 @@
 {% set s = host.status %}
 <tr id="row-{{ host.host_id }}" class="hover:bg-slate-800/40 transition-colors {% if s == 'terminated' %}opacity-50{% endif %}">
-  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.host_id[-12:] }}</td>
-  <td class="px-5 py-3">
+  <td class="px-5 py-3 font-mono text-xs text-slate-400" :class="{'hidden': !$store.cols.visible.id}">{{ host.host_id[-12:] }}</td>
+  <td class="px-5 py-3" :class="{'hidden': !$store.cols.visible.name}">
     <a href="/host/{{ host.host_id }}" class="text-slate-300 text-xs font-medium hover:text-green-400 transition-colors">{{ host.name }}</a>
   </td>
-  <td class="px-5 py-3 text-slate-200 font-medium">{{ host.instance_type }}</td>
-  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.az }}</td>
-  <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
-  <td class="px-5 py-3 text-right font-mono text-green-400">${{ host.spot_price_usd }}</td>
-  <td class="px-5 py-3 text-right font-mono text-yellow-400">${{ host.monthly_price_usd or '?' }}</td>
-  <td class="px-5 py-3 text-right font-mono {% if s == 'running' %}text-orange-300{% else %}text-slate-400{% endif %}">
+  <td class="px-5 py-3 text-slate-200 font-medium" :class="{'hidden': !$store.cols.visible.type}">{{ host.instance_type }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-400" :class="{'hidden': !$store.cols.visible.az}">{{ host.az }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-300" :class="{'hidden': !$store.cols.visible.ip}">{{ host.public_ip or '—' }}</td>
+  <td class="px-5 py-3 text-right font-mono text-green-400" :class="{'hidden': !$store.cols.visible.hr}">${{ host.spot_price_usd }}</td>
+  <td class="px-5 py-3 text-right font-mono text-yellow-400" :class="{'hidden': !$store.cols.visible.mo}">${{ host.monthly_price_usd or '?' }}</td>
+  <td class="px-5 py-3 text-right font-mono {% if s == 'running' %}text-orange-300{% else %}text-slate-400{% endif %}" :class="{'hidden': !$store.cols.visible.spend}">
     {% if host._cost_usd is not none and host._cost_usd is defined %}${{ "%.4f"|format(host._cost_usd) }}{% else %}—{% endif %}
   </td>
-  <td class="px-5 py-3 font-mono text-xs text-slate-500">{{ (host.launched_at or '')[:16].replace('T',' ') or '—' }}</td>
-  <td class="px-5 py-3">
+  <td class="px-5 py-3 font-mono text-xs text-slate-500" :class="{'hidden': !$store.cols.visible.launched}">{{ (host.launched_at or '')[:16].replace('T',' ') or '—' }}</td>
+  <td class="px-5 py-3" :class="{'hidden': !$store.cols.visible.status}">
     {% if s == 'running' %}
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">
         <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> running
@@ -29,10 +29,10 @@
       <div class="text-red-400 text-xs mt-1">{{ host._error }}</div>
     {% endif %}
   </td>
-  <td class="px-5 py-3 text-slate-500 text-xs max-w-[140px] truncate" title="{{ host.notes or '' }}">
+  <td class="px-5 py-3 text-slate-500 text-xs max-w-[140px] truncate" title="{{ host.notes or '' }}" :class="{'hidden': !$store.cols.visible.notes}">
     {{ host.notes or '—' }}
   </td>
-  <td class="px-5 py-3">
+  <td class="px-5 py-3" :class="{'hidden': !$store.cols.visible.actions}">
     <div class="flex items-center gap-1.5">
       <button hx-get="/host/{{ host.host_id }}/edit"
               hx-target="#row-{{ host.host_id }}"

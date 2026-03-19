@@ -37,6 +37,17 @@
         show(id, name) { this.host_id = id; this.host_name = name; this.open = true; },
         hide() { this.open = false; }
       });
+      const _defaultCols = {
+        id: false, name: false, type: true, az: true, ip: true,
+        hr: false, mo: true, spend: true, launched: true,
+        status: true, notes: true, actions: true
+      };
+      Alpine.store('cols', {
+        open: false,
+        visible: Object.assign({}, _defaultCols, JSON.parse(localStorage.getItem('inv_cols') || '{}')),
+        toggle(k) { this.visible[k] = !this.visible[k]; localStorage.setItem('inv_cols', JSON.stringify(this.visible)); },
+        reset() { this.visible = {..._defaultCols}; localStorage.removeItem('inv_cols'); }
+      });
     });
 
     function copyText(text, btn) {
