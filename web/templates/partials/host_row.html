@@ -9,6 +9,7 @@
   <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
   <td class="px-5 py-3 text-right font-mono text-green-400">${{ host.spot_price_usd }}</td>
   <td class="px-5 py-3 text-right font-mono text-yellow-400">${{ host.monthly_price_usd or '?' }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-500">{{ (host.launched_at or '')[:16].replace('T',' ') or '—' }}</td>
   <td class="px-5 py-3">
     {% if s == 'running' %}
       <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">

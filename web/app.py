@@ -182,6 +182,8 @@ async def launch_status(request: Request, job_id: str):
 @app.get("/inventory", response_class=HTMLResponse)
 async def inventory_page(request: Request):
     hosts = load_hosts()
+    hosts = sorted(hosts, key=lambda h: h.get("launched_at") or "", reverse=True)
+    hosts = sorted(hosts, key=lambda h: 0 if h.get("status") == "running" else 1)
     return templates.TemplateResponse("inventory.html", ctx(
         request, hosts=hosts, active_page="inventory"
     ))
