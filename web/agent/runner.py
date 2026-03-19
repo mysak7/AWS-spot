@@ -42,7 +42,7 @@ For multiple commands in one call use:
   command2
   EOF
 
-Task: {instruction}
+{context}Task: {instruction}
 """
 
 
@@ -114,7 +114,8 @@ def run_agent(
     claude_bin: str = CLAUDE_BIN_DEFAULT,
     session_id: str = "",
     stop_event: Event | None = None,
-    **_kwargs: Any,  # absorb legacy bridge_url / bridge_api_key if passed
+    context: str = "",
+    **_kwargs: Any,
 ) -> tuple[str, str]:
     """Run claude locally to control the remote host via SSH.
     Returns (summary, final_status) where final_status is done|failed|stopped.
@@ -138,6 +139,7 @@ def run_agent(
         public_ip=host.get("public_ip", ""),
         key_file=tmp_key,
         instruction=instruction,
+        context=context + "\n" if context else "",
     )
 
     cmd = claude_bin.split() + [

@@ -92,8 +92,13 @@ Examples:
               <span class="shrink-0 text-xs text-green-400 bg-green-950 border border-green-900 px-1.5 py-0.5 rounded">done</span>
             {% elif s.status == 'running' %}
               <span class="shrink-0 text-xs text-blue-400 bg-blue-950 border border-blue-900 px-1.5 py-0.5 rounded animate-pulse">running</span>
+            {% elif s.status == 'stopped' %}
+              <span class="shrink-0 text-xs text-orange-400 bg-orange-950 border border-orange-900 px-1.5 py-0.5 rounded">stopped</span>
             {% else %}
               <span class="shrink-0 text-xs text-red-400 bg-red-950 border border-red-900 px-1.5 py-0.5 rounded">failed</span>
+            {% endif %}
+            {% if s.parent_session_id %}
+              <span class="shrink-0 text-xs text-slate-600" title="continued from {{ s.parent_session_id }}">↩</span>
             {% endif %}
           </div>
           {% if s.summary %}

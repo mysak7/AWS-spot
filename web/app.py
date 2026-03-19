@@ -27,6 +27,7 @@ from config_store import load_config, save_config
 from agent.sessions import (
     create_session, append_log, finish_session,
     load_session, load_session_meta, read_log, list_sessions,
+    build_context,
 )
 from agent.runner import run_agent
 from agent.stop_flags import create_flag, request_stop, cleanup as cleanup_stop_flag
@@ -330,6 +331,46 @@ async def host_run(request: Request, host_id: str):
     return RedirectResponse(
         f"/host/{host_id}/session/{session_id}", status_code=303
     )
+
+
+@app.post("/host/{host_id}/session/{session_id}/continue", response_class=HTMLResponse)
+async def session_continue(request: Request, host_id: str, session_id: str):
+    form = await request.form()
+    instruction = str(form.get("instruction", "")).strip()
+    if not instruction:
+        return HTMLResponse('<p class="text-red-400 text-sm">Instruction cannot be empty.</p>')
+
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse('<p class="text-red-400 text-sm">Host not found.</p>')
+
+    context = build_context(host_id, session_id)
+    new_session_id = create_session(host_id, instruction, parent_session_id=session_id)
+    cfg = load_config()
+    stop_event = create_flag(new_session_id)
+
+    def do_run() -> None:
+        def on_log(entry: dict) -> None:
+            append_log(host_id, new_session_id, entry)
+        try:
+            summary, final_status = run_agent(
+                host, instruction, on_log,
+                claude_bin=cfg["claude_bin"],
+                session_id=new_session_id,
+                stop_event=stop_event,
+                context=context,
+            )
+            finish_session(host_id, new_session_id, final_status, summary)
+        except Exception as e:
+            append_log(host_id, new_session_id, {"type": "error", "content": str(e)})
+            finish_session(host_id, new_session_id, "failed", str(e))
+        finally:
+            cleanup_stop_flag(new_session_id)
+
+    Thread(target=do_run, daemon=True).start()
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"/host/{host_id}/session/{new_session_id}", status_code=303)
 
 
 @app.post("/host/{host_id}/session/{session_id}/stop", response_class=HTMLResponse)

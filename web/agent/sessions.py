@@ -23,7 +23,11 @@ def _session_dir(host_id: str, session_id: str) -> Path:
 
 # ── Write ─────────────────────────────────────────────────────────────────────
 
-def create_session(host_id: str, instruction: str) -> str:
+def create_session(
+    host_id: str,
+    instruction: str,
+    parent_session_id: str | None = None,
+) -> str:
     session_id = uuid.uuid4().hex
     d = _session_dir(host_id, session_id)
     d.mkdir(parents=True, exist_ok=True)
@@ -35,10 +39,45 @@ def create_session(host_id: str, instruction: str) -> str:
         "started_at": _now(),
         "finished_at": None,
         "summary": None,
+        "parent_session_id": parent_session_id,
     }
     (d / "meta.json").write_text(json.dumps(meta, indent=2))
     (d / "log.jsonl").touch()
     return session_id
+
+
+def build_context(host_id: str, session_id: str) -> str:
+    """Return a text summary of a session's log suitable for use as prior context."""
+    try:
+        meta = load_session_meta(host_id, session_id)
+        entries = read_log(host_id, session_id)
+    except Exception:
+        return ""
+
+    lines = [
+        f"=== Prior session context ===",
+        f"Task: {meta.get('instruction', '')}",
+    ]
+    for e in entries:
+        t = e.get("type", "")
+        c = e.get("content", "").strip()
+        if not c or t == "agent" and c.startswith("[finished"):
+            continue
+        if t == "cmd":
+            lines.append(f"$ {c}")
+        elif t == "output":
+            # Truncate long outputs
+            preview = c if len(c) <= 500 else c[:500] + "\n...(truncated)"
+            lines.append(preview)
+        elif t == "agent":
+            lines.append(f"[agent] {c}")
+        elif t == "error":
+            lines.append(f"[error] {c}")
+
+    if meta.get("summary"):
+        lines.append(f"\nSession summary: {meta['summary']}")
+    lines.append("=== End prior context ===\n")
+    return "\n".join(lines)
 
 
 def append_log(host_id: str, session_id: str, entry: dict[str, Any]) -> None:
