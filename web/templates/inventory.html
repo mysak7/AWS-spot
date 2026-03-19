@@ -15,7 +15,8 @@
 
   {% if hosts %}
   <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-max">
       <thead>
         <tr class="text-slate-500 text-xs uppercase tracking-wider border-b border-slate-800 bg-slate-800/50">
           <th class="px-5 py-3 text-left">Instance ID</th>
@@ -38,6 +39,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   {% else %}
   <div class="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
