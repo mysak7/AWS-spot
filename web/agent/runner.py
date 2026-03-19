@@ -92,8 +92,10 @@ def run_agent(
 
     messages: list[dict[str, Any]] = [{"role": "user", "content": instruction}]
     steps = 0
-    parse_failures = 0
+    total_parse_failures = 0
+    consecutive_parse_failures = 0
     last_message = ""
+    recent_commands: list[str] = []  # last N commands for loop detection
 
     try:
         while steps < MAX_STEPS:
@@ -103,9 +105,10 @@ def run_agent(
             action = _parse_action(raw)
 
             if action is None:
-                parse_failures += 1
+                consecutive_parse_failures += 1
+                total_parse_failures += 1
                 on_log({"type": "agent", "content": f"[raw] {raw.strip()}"})
-                if parse_failures >= 2:
+                if consecutive_parse_failures >= 2 or total_parse_failures >= 5:
                     last_message = raw.strip()
                     break
                 # Ask Claude to retry with proper JSON
@@ -116,7 +119,7 @@ def run_agent(
                 })
                 continue
 
-            parse_failures = 0
+            consecutive_parse_failures = 0
 
             if action.get("action") == "done":
                 last_message = action.get("message", "Done.")
@@ -124,7 +127,17 @@ def run_agent(
                 break
 
             if action.get("action") == "run":
-                command = action.get("command", "")
+                command = action.get("command", "").strip()
+
+                # Loop detection: same command 3 times in last 6 steps → abort
+                recent_commands.append(command)
+                if len(recent_commands) > 6:
+                    recent_commands.pop(0)
+                if recent_commands.count(command) >= 3:
+                    last_message = f"Aborted: repeated command '{command}' detected in a loop."
+                    on_log({"type": "error", "content": last_message})
+                    break
+
                 on_log({"type": "cmd", "content": command})
 
                 out, err, exit_code = ssh.run(command)
