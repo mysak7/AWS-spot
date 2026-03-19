@@ -1,0 +1,235 @@
+- name: Setup User, NetBird, and Monitoring Stack
+  hosts: all
+  become: yes
+  vars:
+    ansible_user: mi
+    ansible_python_interpreter: /usr/bin/python3
+    # Ensure this is defined in your inventory or via -e "netbird_setup_key=..."
+    # netbird_setup_key: "YOUR_KEY_HERE"
+
+  pre_tasks:
+    - name: Verify NetBird setup key is defined
+      fail:
+        msg: "The variable 'netbird_setup_key' is not defined. Please provide it via inventory or extra vars."
+      when: netbird_setup_key is not defined
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # System & User Setup
+    # -------------------------------------------------------------------------
+    - name: Install sudo
+      apt:
+        name: sudo
+        state: present
+        update_cache: yes
+
+    - name: Ensure docker group exists
+      group:
+        name: docker
+        state: present
+
+    - name: Create user mi
+      user:
+        name: mi
+        shell: /bin/bash
+        groups: sudo,docker
+        append: yes
+        create_home: yes
+
+    - name: Set authorized key for user mi
+      authorized_key:
+        user: mi
+        state: present
+        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCUJzogiXbPxEYt9ynpoA3BCerOZVvxWAyy/Pw7VHUqmBdBuVeKwW/RUxc6/QjaKu3pIp00HwD7p+JCXYPsM5tD6ij8J8wE65OG83tYzRzUpOCiB6Kj7xC0iR3uw6npVHJ2ihlkb5TInDLFem8IzfTvA/ypjoAyrlG0O9VJtFuf5daQqo9usNpphvhVfRK/8AErT6DKgZiUXEtSsoNicdDZugaYlPji7C9KRjxUg05GG7RVsjtyCg2RMM/IyQoazQq0DV1fHZMCGJEKwGnL6WnImRvpxLqgSkIN8yXb+9ii80hcpri5Y8VW3/48ocmiQSUsrfmC9ymAOwSCXJVnlyUDtlbsfupk4W5AnRvHJ8xXT8unFr5Q6YDDh3WLyD4PpxKyJkYFw+pb6QaP8RrfbBrqw6gwR/KcNYd5DmEUY18g6tACgq3oLd178nmTUrFZJWvCNPLRiPotiXJ7UOyj4eVbUHBKXAyFS6cDJ1tAiKXH6t3h7Xe4QH0iZshoAHSrQKrdqeGKvwKHHjXVAJ/CtRaGph3INv9GfAyI8BF1fiIQfAkUADSLmImNg/EjnbG1dyNJr1KsCG19oTuF6eHrgd71U9lvnRmdFQo+8ku8SnkcJXdsogHIJpGRpNu89TBREOvmi6ptse8EwsPW5wzIDm2uOv0UqPt8VZirt3LpbP52MQ== rsa-key-20250611"
+
+    - name: Set authorized key for current user
+      authorized_key:
+        user: "{{ ansible_user_id }}"
+        state: present
+        key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCUJzogiXbPxEYt9ynpoA3BCerOZVvxWAyy/Pw7VHUqmBdBuVeKwW/RUxc6/QjaKu3pIp00HwD7p+JCXYPsM5tD6ij8J8wE65OG83tYzRzUpOCiB6Kj7xC0iR3uw6npVHJ2ihlkb5TInDLFem8IzfTvA/ypjoAyrlG0O9VJtFuf5daQqo9usNpphvhVfRK/8AErT6DKgZiUXEtSsoNicdDZugaYlPji7C9KRjxUg05GG7RVsjtyCg2RMM/IyQoazQq0DV1fHZMCGJEKwGnL6WnImRvpxLqgSkIN8yXb+9ii80hcpri5Y8VW3/48ocmiQSUsrfmC9ymAOwSCXJVnlyUDtlbsfupk4W5AnRvHJ8xXT8unFr5Q6YDDh3WLyD4PpxKyJkYFw+pb6QaP8RrfbBrqw6gwR/KcNYd5DmEUY18g6tACgq3oLd178nmTUrFZJWvCNPLRiPotiXJ7UOyj4eVbUHBKXAyFS6cDJ1tAiKXH6t3h7Xe4QH0iZshoAHSrQKrdqeGKvwKHHjXVAJ/CtRaGph3INv9GfAyI8BF1fiIQfAkUADSLmImNg/EjnbG1dyNJr1KsCG19oTuF6eHrgd71U9lvnRmdFQo+8ku8SnkcJXdsogHIJpGRpNu89TBREOvmi6ptse8EwsPW5wzIDm2uOv0UqPt8VZirt3LpbP52MQ== rsa-key-20250611"
+
+    - name: Setup passwordless sudo for mi
+      copy:
+        dest: /etc/sudoers.d/mi
+        content: "mi ALL=(ALL) NOPASSWD: ALL"
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    # -------------------------------------------------------------------------
+    # Base Packages & Docker Setup
+    # -------------------------------------------------------------------------
+    - name: Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+        cache_valid_time: 3600
+
+    - name: Install dependencies
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - git
+          - btop
+          - tmux
+          - mc
+          - python3-pip
+        state: present
+
+    - name: Check if Docker is installed
+      shell: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install Docker (Ubuntu package)
+      apt:
+        name: docker.io
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Install system python3-docker
+      apt:
+        name: python3-docker
+        state: present
+
+    - name: Ensure Docker service is started and enabled
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # -------------------------------------------------------------------------
+    # NetBird Native Install
+    # -------------------------------------------------------------------------
+    - name: Download NetBird GPG key
+      get_url:
+        url: https://pkgs.netbird.io/debian/public.key
+        dest: /tmp/netbird.key
+        mode: '0644'
+
+    - name: Dearmor NetBird GPG key
+      shell: cat /tmp/netbird.key | gpg --dearmor -o /usr/share/keyrings/netbird-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/netbird-archive-keyring.gpg
+
+    - name: Add NetBird repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] https://pkgs.netbird.io/debian stable main"
+        state: present
+        filename: netbird
+
+    - name: Install NetBird
+      apt:
+        name: netbird
+        state: present
+        update_cache: yes
+
+    - name: Check NetBird status
+      command: netbird status
+      register: netbird_status
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Join NetBird network
+      command: "netbird up --setup-key {{ netbird_setup_key }}"
+      when: "'Connected' not in netbird_status.stdout"
+
+    # -------------------------------------------------------------------------
+    # Prometheus Configuration
+    # -------------------------------------------------------------------------
+    - name: Create Prometheus config directory
+      file:
+        path: /etc/prometheus
+        state: directory
+        mode: '0755'
+
+    - name: Create Prometheus config file
+      copy:
+        dest: /etc/prometheus/prometheus.yml
+        mode: '0644'
+        content: |
+          global:
+            scrape_interval: 15s
+            external_labels:
+              monitor: 'remote-monitor'
+
+          scrape_configs:
+            - job_name: 'node-exporter'
+              static_configs:
+                - targets: ['node-exporter:9100']
+                  labels:
+                    instance: '{{ inventory_hostname }}'
+                    hostname: '{{ ansible_hostname }}'
+
+            - job_name: 'cadvisor'
+              static_configs:
+                - targets: ['cadvisor:8080']
+                  labels:
+                    instance: '{{ inventory_hostname }}'
+                    hostname: '{{ ansible_hostname }}'
+
+            - job_name: 'vmagent'
+              static_configs:
+                - targets: ['localhost:8429']
+                  labels:
+                    instance: '{{ inventory_hostname }}'
+                    hostname: '{{ ansible_hostname }}'
+      register: prometheus_config
+
+    - name: Create monitor network
+      docker_network:
+        name: monitor-net
+        driver: bridge
+
+    # -------------------------------------------------------------------------
+    # Docker Containers
+    # -------------------------------------------------------------------------
+    - name: Run Node Exporter container
+      docker_container:
+        name: node-exporter
+        image: "prom/node-exporter:latest"
+        restart_policy: unless-stopped
+        pid_mode: host
+        hostname: "{{ ansible_hostname }}"
+        volumes:
+          - /:/host:ro
+        command:
+          - '--path.rootfs=/host'
+        networks:
+          - name: monitor-net
+        ports:
+          - "9100:9100"
+
+    - name: Run cAdvisor container
+      docker_container:
+        name: cadvisor
+        image: "gcr.io/cadvisor/cadvisor:latest"
+        restart_policy: unless-stopped
+        volumes:
+          - /:/rootfs:ro
+          - /var/run:/var/run:ro
+          - /sys:/sys:ro
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+          - name: monitor-net
+        ports:
+          - "8081:8080"
+
+    - name: Run vmagent container
+      docker_container:
+        name: vmagent
+        image: "victoriametrics/vmagent:latest"
+        restart_policy: unless-stopped
+        restart: "{{ prometheus_config.changed }}"
+        volumes:
+          - /etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          - vmagent-data:/vmagent-data
+        command:
+          - '-promscrape.config=/etc/prometheus/prometheus.yml'
+          - '-remoteWrite.url=http://m15:8080/api/v1/push'
+        networks:
+          - name: monitor-net
+        ports:
+          - "8429:8429"

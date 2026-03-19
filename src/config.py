@@ -4,17 +4,22 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent
 CREDENTIALS_FILE = ROOT_DIR / "credentials.json"
 HOSTS_FILE = ROOT_DIR / "hosts.json"
+SETTINGS_FILE = ROOT_DIR / "settings.json"
 KEYS_DIR = ROOT_DIR / "keys"
 DELETED_KEYS_DIR = ROOT_DIR / "keys" / "deleted"
+ANSIBLE_PLAYBOOK = ROOT_DIR / "ansible" / "setup.yml"
+
+# Default NetBird setup key (can be overridden at runtime)
+NETBIRD_SETUP_KEY_DEFAULT = "24604E39-01CD-465B-86CD-B203A0A1C9C5"
 
 # AWS
 FREE_TIER_TYPES: set[str] = {"t3.micro", "t4g.micro"}
 SECURITY_GROUP_NAME = "spot-manager-sg"
 SECURITY_GROUP_DESC = "Spot Manager - SSH only (TCP 22)"
-SSH_USER = "ec2-user"
-AMI_OWNER = "amazon"
-AMI_NAME_FILTER_X86 = "al2023-ami-*-x86_64"
-AMI_NAME_FILTER_ARM = "al2023-ami-*-arm64"
+SSH_USER = "ubuntu"
+AMI_OWNER = "099720109477"  # Canonical
+AMI_NAME_FILTER_X86 = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"
+AMI_NAME_FILTER_ARM = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*"
 # Keep legacy name pointing to x86 for any existing callers
 AMI_NAME_FILTER = AMI_NAME_FILTER_X86
 SPOT_HISTORY_HOURS = 1

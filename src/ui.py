@@ -6,7 +6,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from config import DEFAULT_INSTANCE_TYPES, DEFAULT_REGIONS, FREE_TIER_TYPES
+from config import DEFAULT_INSTANCE_TYPES, DEFAULT_REGIONS, FREE_TIER_TYPES, NETBIRD_SETUP_KEY_DEFAULT
 
 console = Console()
 
@@ -43,7 +43,9 @@ def main_menu() -> str:
         ("3", "Launch Instance"),
         ("4", "Connect to Host (show SSH command)"),
         ("5", "Terminate Host"),
-        ("6", "Exit"),
+        ("6", "Run Ansible Setup on Host"),
+        ("7", "Settings"),
+        ("8", "Exit"),
     ]
     for key, label in options:
         console.print(f"  [cyan]{key}[/cyan]  {label}")
@@ -237,3 +239,44 @@ def show_host_detail(host: dict[str, Any]) -> None:
 
 def confirm(msg: str, default: bool = False) -> bool:
     return Confirm.ask(msg, default=default)
+
+
+def prompt_instance_name() -> str:
+    return Prompt.ask("Instance name", default="")
+
+
+def prompt_netbird_key(default: str = NETBIRD_SETUP_KEY_DEFAULT) -> str:
+    return Prompt.ask("NetBird setup key", default=default)
+
+
+def show_settings(settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Display current settings and return updated dict, or None if cancelled."""
+    console.print()
+    console.print(Panel(
+        "\n".join(f"[cyan]{k}:[/cyan] {v}" for k, v in settings.items()),
+        title="[bold]Settings[/bold]",
+        expand=False,
+    ))
+    console.print()
+    console.print("  [cyan]1[/cyan]  Edit NetBird setup key")
+    console.print("  [cyan]0[/cyan]  Back")
+    console.print()
+    choice = Prompt.ask("Choose", choices=["0", "1"], default="0")
+    if choice == "0":
+        return None
+    updated = dict(settings)
+    if choice == "1":
+        updated["netbird_setup_key"] = prompt_netbird_key(
+            default=settings.get("netbird_setup_key", NETBIRD_SETUP_KEY_DEFAULT)
+        )
+    return updated
+
+
+def prompt_ansible_output_mode() -> bool:
+    """Return True if the user wants output in a new terminal window."""
+    console.print("\n[bold]Ansible output[/bold]")
+    console.print("  [cyan]1[/cyan]  Inline (stream to this terminal)")
+    console.print("  [cyan]2[/cyan]  New window (open terminal emulator)")
+    console.print()
+    choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+    return choice == "2"

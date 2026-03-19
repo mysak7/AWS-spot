@@ -52,7 +52,7 @@ def get_latest_ami(client: Any, instance_type: str = "") -> str:
 
     images = resp.get("Images", [])
     if not images:
-        raise ProvisionError(f"No Amazon Linux 2023 {arch} AMI found in this region")
+        raise ProvisionError(f"No Ubuntu 24.04 LTS {arch} AMI found in this region")
 
     images.sort(key=lambda x: x["CreationDate"], reverse=True)
     return images[0]["ImageId"]
@@ -130,6 +130,7 @@ def provision_instance(
     instance_type: str,
     spot_price_usd: str,
     creds: dict[str, str],
+    name: str = "",
     progress_cb: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """
@@ -164,6 +165,7 @@ def provision_instance(
         bid = f"{float(spot_price_usd) * 2:.6f}"
 
         _p("Submitting spot request...")
+        host_name = name.strip() or f"spot-{uuid.uuid4().hex[:6]}"
         try:
             run_resp = client.run_instances(
                 ImageId=ami_id,
@@ -187,6 +189,12 @@ def provision_instance(
                     }
                 ],
                 Placement={"AvailabilityZone": az},
+                TagSpecifications=[
+                    {
+                        "ResourceType": "instance",
+                        "Tags": [{"Key": "Name", "Value": host_name}],
+                    }
+                ],
             )
         except ClientError as e:
             raise ProvisionError(
@@ -198,17 +206,17 @@ def provision_instance(
         public_ip = _wait_for_running(client, instance_id)
         _p("Saving to inventory...")
 
-        abs_key = str(KEYS_DIR / f"{key_name}.pem")
-        ssh_cmd = f"ssh -i {abs_key} {SSH_USER}@{public_ip}"
+        rel_key = f"keys/{key_name}.pem"
+        ssh_cmd = f"ssh -i {rel_key} {SSH_USER}@{public_ip}"
 
         host: dict[str, Any] = {
             "host_id": instance_id,
-            "name": f"spot-{instance_id[-6:]}",
+            "name": host_name,
             "region": region,
             "az": az,
             "instance_type": instance_type,
             "public_ip": public_ip,
-            "key_file": abs_key,
+            "key_file": rel_key,
             "key_name": key_name,
             "ssh_cmd": ssh_cmd,
             "launched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -7,11 +7,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 import ui
+from ansible_runner import AnsibleError, run_ansible_setup
 from config import FREE_TIER_TYPES
 from credentials import CredentialsError, load_credentials, validate_credentials
 from instance_catalog import InstanceCatalogError, get_instance_info
 from inventory import load_hosts
 from provisioner import ProvisionError, provision_instance, reconcile_inventory, terminate_host
+from settings import load_settings, save_settings
 from spot_scanner import SpotScanError, scan_spot_prices
 
 
@@ -87,6 +89,8 @@ def action_launch(creds: dict) -> None:
     ):
         return
 
+    instance_name = ui.prompt_instance_name()
+
     with Progress(
         SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
         transient=True,
@@ -101,6 +105,7 @@ def action_launch(creds: dict) -> None:
                 instance_type=itype,
                 spot_price_usd=selected["spot_price_usd"],
                 creds=creds,
+                name=instance_name,
             )
         except ProvisionError as e:
             ui.print_error(str(e))
@@ -118,6 +123,35 @@ def action_connect(_creds: dict) -> None:
         ui.console.print(
             f"\n[bold]SSH command:[/bold]\n  [cyan]{host['ssh_cmd']}[/cyan]\n"
         )
+
+
+def action_ansible_setup(_creds: dict) -> None:
+    hosts = load_hosts()
+    host = ui.select_host(hosts, status_filter="running")
+    if host is None:
+        return
+
+    ui.show_host_detail(host)
+    settings = load_settings()
+    netbird_key = ui.prompt_netbird_key(default=settings["netbird_setup_key"])
+    new_window = ui.prompt_ansible_output_mode()
+
+    try:
+        run_ansible_setup(host, netbird_key, new_window)
+        if new_window:
+            ui.print_success("Ansible playbook launched in new terminal window.")
+        else:
+            ui.print_success("Ansible playbook completed.")
+    except AnsibleError as e:
+        ui.print_error(str(e))
+
+
+def action_settings(_creds: dict) -> None:
+    settings = load_settings()
+    updated = ui.show_settings(settings)
+    if updated is not None:
+        save_settings(updated)
+        ui.print_success("Settings saved.")
 
 
 def action_terminate(creds: dict) -> None:
@@ -145,6 +179,8 @@ _ACTIONS = {
     "3": action_launch,
     "4": action_connect,
     "5": action_terminate,
+    "6": action_ansible_setup,
+    "7": action_settings,
 }
 
 
@@ -188,7 +224,7 @@ def main() -> None:
     # Main loop
     while True:
         choice = ui.main_menu()
-        if choice == "6":
+        if choice == "8":
             ui.console.print("[dim]Goodbye.[/dim]")
             break
         action = _ACTIONS.get(choice)
