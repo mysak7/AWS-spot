@@ -156,33 +156,35 @@ def provision_instance(
 
         _p("Submitting spot request...")
         try:
-            sir_resp = client.request_spot_instances(
-                InstanceCount=1,
-                SpotPrice=bid,
-                LaunchSpecification={
-                    "ImageId": ami_id,
-                    "InstanceType": instance_type,
-                    "KeyName": key_name,
-                    "Placement": {"AvailabilityZone": az},
-                    "NetworkInterfaces": [
-                        {
-                            "DeviceIndex": 0,
-                            "SubnetId": subnet_id,
-                            "Groups": [sg_id],
-                            "AssociatePublicIpAddress": True,
-                        }
-                    ],
+            run_resp = client.run_instances(
+                ImageId=ami_id,
+                InstanceType=instance_type,
+                KeyName=key_name,
+                MinCount=1,
+                MaxCount=1,
+                InstanceMarketOptions={
+                    "MarketType": "spot",
+                    "SpotOptions": {
+                        "MaxPrice": bid,
+                        "SpotInstanceType": "one-time",
+                    },
                 },
-                Type="one-time",
+                NetworkInterfaces=[
+                    {
+                        "DeviceIndex": 0,
+                        "SubnetId": subnet_id,
+                        "Groups": [sg_id],
+                        "AssociatePublicIpAddress": True,
+                    }
+                ],
+                Placement={"AvailabilityZone": az},
             )
         except ClientError as e:
             raise ProvisionError(
                 f"Spot request failed: {e.response['Error']['Message']}"
             ) from e
 
-        sir_id = sir_resp["SpotInstanceRequests"][0]["SpotInstanceRequestId"]
-        _p("Waiting for spot request fulfillment...")
-        instance_id = _wait_for_fulfillment(client, sir_id)
+        instance_id = run_resp["Instances"][0]["InstanceId"]
         _p("Waiting for instance to reach running state...")
         public_ip = _wait_for_running(client, instance_id)
         _p("Saving to inventory...")
@@ -217,28 +219,6 @@ def provision_instance(
             pass
         raise
 
-
-def _wait_for_fulfillment(client: Any, sir_id: str, timeout: int = 180) -> str:
-    """Poll until spot request is fulfilled. Returns instance ID."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            resp = client.describe_spot_instance_requests(
-                SpotInstanceRequestIds=[sir_id]
-            )
-            req = resp["SpotInstanceRequests"][0]
-            state = req["State"]
-            if state == "active" and req.get("InstanceId"):
-                return req["InstanceId"]
-            if state in ("cancelled", "failed", "closed"):
-                msg = req.get("Status", {}).get("Message", "")
-                raise ProvisionError(f"Spot request {state}: {msg}")
-        except ClientError as e:
-            raise ProvisionError(
-                f"Error polling spot request: {e.response['Error']['Message']}"
-            ) from e
-        time.sleep(5)
-    raise ProvisionError(f"Spot request not fulfilled within {timeout}s")
 
 
 def _wait_for_running(client: Any, instance_id: str, timeout: int = 180) -> str:

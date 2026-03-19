@@ -8,7 +8,7 @@ KEYS_DIR = ROOT_DIR / "keys"
 DELETED_KEYS_DIR = ROOT_DIR / "keys" / "deleted"
 
 # AWS
-FREE_TIER_TYPES: set[str] = {"t2.micro", "t3.micro"}
+FREE_TIER_TYPES: set[str] = {"t3.micro"}
 SECURITY_GROUP_NAME = "spot-manager-sg"
 SECURITY_GROUP_DESC = "Spot Manager - SSH only (TCP 22)"
 SSH_USER = "ec2-user"
@@ -17,7 +17,6 @@ AMI_NAME_FILTER = "al2023-ami-*-x86_64"
 SPOT_HISTORY_HOURS = 1
 
 DEFAULT_INSTANCE_TYPES: list[str] = [
-    "t2.micro",
     "t3.micro",
     "t3.small",
     "t3.medium",
