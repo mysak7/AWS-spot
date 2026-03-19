@@ -10,9 +10,14 @@
   <!-- Stats row -->
   <div class="grid grid-cols-3 gap-4 mb-8">
     <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <div class="text-slate-400 text-xs uppercase tracking-wider mb-2">Running</div>
-      <div class="text-3xl font-bold text-green-400">{{ running_count }}</div>
-      <div class="text-slate-500 text-xs mt-1">active instances</div>
+      <div class="text-slate-400 text-xs uppercase tracking-wider mb-3">Instances</div>
+      <div class="flex items-center gap-3">
+        <span class="text-2xl font-bold text-green-400">{{ running_count }}</span>
+        <span class="text-xs text-green-500 font-medium">running</span>
+        <span class="text-slate-700">/</span>
+        <span class="text-2xl font-bold text-slate-500">{{ terminated_count }}</span>
+        <span class="text-xs text-slate-600 font-medium">terminated</span>
+      </div>
     </div>
     <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
       <div class="text-slate-400 text-xs uppercase tracking-wider mb-2">Monthly Cost</div>
@@ -20,9 +25,9 @@
       <div class="text-slate-500 text-xs mt-1">running instances only</div>
     </div>
     <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <div class="text-slate-400 text-xs uppercase tracking-wider mb-2">Total Hosts</div>
-      <div class="text-3xl font-bold text-slate-300">{{ total_hosts }}</div>
-      <div class="text-slate-500 text-xs mt-1">{{ terminated_count }} terminated</div>
+      <div class="text-slate-400 text-xs uppercase tracking-wider mb-2">Total Spend</div>
+      <div class="text-3xl font-bold text-orange-400">${{ total_spend }}</div>
+      <div class="text-slate-500 text-xs mt-1">all hosts, actual hours</div>
     </div>
   </div>
 

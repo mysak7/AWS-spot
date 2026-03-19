@@ -59,15 +59,17 @@ def ctx(request: Request, **kw: Any) -> dict[str, Any]:
 async def dashboard(request: Request):
     hosts = load_hosts()
     running = [h for h in hosts if h.get("status") == "running"]
+    terminated = [h for h in hosts if h.get("status") == "terminated"]
     total_mo = sum(float(h.get("monthly_price_usd", 0)) for h in running)
+    total_spend = sum(c for h in hosts if (c := _host_cost(h)) is not None)
     recent = sorted(hosts, key=lambda h: h.get("launched_at", ""), reverse=True)[:6]
     return templates.TemplateResponse("dashboard.html", ctx(
         request,
         recent=recent,
-        total_hosts=len(hosts),
         running_count=len(running),
-        terminated_count=len([h for h in hosts if h.get("status") == "terminated"]),
+        terminated_count=len(terminated),
         total_monthly=f"{total_mo:.2f}",
+        total_spend=f"{total_spend:.4f}",
         active_page="dashboard",
     ))
 
