@@ -1,4 +1,6 @@
 import json
+import os
+import pwd
 import subprocess
 import time
 from collections.abc import Callable
@@ -8,6 +10,18 @@ from typing import Any
 from llm_log import append_query
 
 CLAUDE_BIN_DEFAULT = "node /usr/lib/node_modules/@anthropic-ai/claude-code/cli.js"
+CLAUDE_USER = "claudeuser"  # non-root user to run claude (root is blocked)
+
+
+def _drop_to_claude_user() -> None:
+    """preexec_fn: switch to claudeuser so claude allows --dangerously-skip-permissions."""
+    try:
+        pw = pwd.getpwnam(CLAUDE_USER)
+        os.setgid(pw.pw_gid)
+        os.setuid(pw.pw_uid)
+        os.environ["HOME"] = pw.pw_dir
+    except (KeyError, PermissionError):
+        pass  # user doesn't exist or already non-root — proceed anyway
 
 TASK_PROMPT = """\
 You are controlling a remote EC2 instance via SSH.
@@ -114,6 +128,7 @@ def run_agent(
         "--output-format", "stream-json",
         "--allowedTools", "Bash",
         "--max-turns", "30",
+        "--dangerously-skip-permissions",
     ]
 
     t0 = time.monotonic()
@@ -124,6 +139,7 @@ def run_agent(
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            preexec_fn=_drop_to_claude_user,
         )
     except FileNotFoundError as e:
         msg = f"claude binary not found: {claude_bin}"

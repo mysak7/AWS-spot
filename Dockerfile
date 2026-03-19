@@ -5,6 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Non-root user for running claude (root is blocked by --dangerously-skip-permissions)
+RUN useradd -m -u 1000 -s /bin/bash claudeuser
+
 COPY src/ ./src/
 COPY web/ ./web/
 COPY run_web.py .
