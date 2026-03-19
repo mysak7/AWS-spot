@@ -9,6 +9,9 @@
   <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
   <td class="px-5 py-3 text-right font-mono text-green-400">${{ host.spot_price_usd }}</td>
   <td class="px-5 py-3 text-right font-mono text-yellow-400">${{ host.monthly_price_usd or '?' }}</td>
+  <td class="px-5 py-3 text-right font-mono {% if s == 'running' %}text-orange-300{% else %}text-slate-400{% endif %}">
+    {% if host._cost_usd is not none and host._cost_usd is defined %}${{ "%.4f"|format(host._cost_usd) }}{% else %}—{% endif %}
+  </td>
   <td class="px-5 py-3 font-mono text-xs text-slate-500">{{ (host.launched_at or '')[:16].replace('T',' ') or '—' }}</td>
   <td class="px-5 py-3">
     {% if s == 'running' %}

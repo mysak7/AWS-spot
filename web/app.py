@@ -180,9 +180,28 @@ async def launch_status(request: Request, job_id: str):
 
 # ── Inventory ─────────────────────────────────────────────────────────────────
 
+def _host_cost(host: dict) -> float | None:
+    """Total spend so far: running = now, terminated = terminated_at."""
+    from datetime import datetime, timezone
+    try:
+        launched = datetime.fromisoformat(
+            (host.get("launched_at") or "").replace("Z", "+00:00")
+        )
+        if host.get("status") == "terminated" and host.get("terminated_at"):
+            end = datetime.fromisoformat(host["terminated_at"].replace("Z", "+00:00"))
+        else:
+            end = datetime.now(timezone.utc)
+        hours = max((end - launched).total_seconds() / 3600, 0)
+        return round(hours * float(host.get("spot_price_usd", 0)), 4)
+    except Exception:
+        return None
+
+
 @app.get("/inventory", response_class=HTMLResponse)
 async def inventory_page(request: Request):
     hosts = load_hosts()
+    for h in hosts:
+        h["_cost_usd"] = _host_cost(h)
     hosts = sorted(hosts, key=lambda h: h.get("launched_at") or "", reverse=True)
     hosts = sorted(hosts, key=lambda h: 0 if h.get("status") == "running" else 1)
     return templates.TemplateResponse("inventory.html", ctx(
@@ -246,7 +265,11 @@ async def do_terminate(request: Request, host_id: str):
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, terminate_host, host, creds)
-        host = {**host, "status": "terminated"}
+        from datetime import datetime, timezone
+        terminated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        from inventory import update_host
+        update_host(host_id, {"status": "terminated", "terminated_at": terminated_at})
+        host = {**host, "status": "terminated", "terminated_at": terminated_at}
     except Exception as e:
         host = {**host, "_error": str(e)}
     return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))
