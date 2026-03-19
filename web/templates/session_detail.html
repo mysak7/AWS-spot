@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-col h-full">
+
+  <!-- Header -->
+  <div class="px-8 py-5 border-b border-slate-800 flex items-center gap-4 shrink-0">
+    <a href="/host/{{ host.host_id }}" class="text-slate-500 hover:text-slate-300 transition-colors text-sm">
+      ← {{ host.name }}
+    </a>
+    <span class="text-slate-700">|</span>
+    <div class="flex-1 min-w-0">
+      <div class="text-sm text-slate-200 truncate font-medium">{{ session.instruction }}</div>
+      <div class="text-xs text-slate-500 mt-0.5">{{ session.started_at[:16].replace('T', ' ') }} UTC · {{ host.instance_type }} · {{ host.public_ip }}</div>
+    </div>
+    <div id="status-badge">
+      {% if session.status == 'running' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-blue-900/60 text-blue-300 border border-blue-800 animate-pulse">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> running
+        </span>
+      {% elif session.status == 'done' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> done
+        </span>
+      {% else %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-red-900/60 text-red-300 border border-red-800">failed</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Log terminal -->
+  <div id="log-container"
+       class="flex-1 overflow-y-auto bg-slate-950 px-8 py-5 font-mono text-xs leading-relaxed"
+       style="min-height: 0">
+
+    {% for entry in session.log %}
+      {% if entry.type == 'cmd' %}
+        <div class="text-green-300 py-0.5"><span class="text-green-600 select-none">$ </span>{{ entry.content }}</div>
+      {% elif entry.type == 'output' %}
+        <div class="text-slate-400 whitespace-pre-wrap py-0.5 pl-3 border-l border-slate-800">{{ entry.content }}</div>
+      {% elif entry.type == 'agent' %}
+        <div class="text-blue-300 py-1 not-italic text-xs" style="font-family: Inter, sans-serif">
+          <span class="text-blue-600 select-none">🤖 </span>{{ entry.content }}
+        </div>
+      {% elif entry.type == 'error' %}
+        <div class="text-red-400 py-0.5">{{ entry.content }}</div>
+      {% endif %}
+    {% endfor %}
+
+    <!-- Live entries appended here by JS -->
+    <div id="live-log"></div>
+
+    {% if session.status == 'running' %}
+    <div id="typing-indicator" class="text-slate-600 py-1 animate-pulse">▋</div>
+    {% endif %}
+  </div>
+
+  <!-- Summary -->
+  <div id="summary-box" class="{% if not session.summary %}hidden{% endif %} shrink-0 border-t border-slate-800 bg-slate-900 px-8 py-5">
+    <div class="text-xs text-slate-400 uppercase tracking-wider mb-2">Summary</div>
+    <div id="summary-text" class="text-slate-200 text-sm leading-relaxed">{{ session.summary or '' }}</div>
+  </div>
+
+</div>
+
+{% if session.status == 'running' %}
+<script>
+  const liveLog = document.getElementById('live-log');
+  const logContainer = document.getElementById('log-container');
+  const typingIndicator = document.getElementById('typing-indicator');
+  const skip = {{ session.log | length }};
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function appendEntry(entry) {
+    const div = document.createElement('div');
+    if (entry.type === 'cmd') {
+      div.className = 'text-green-300 py-0.5';
+      div.innerHTML = '<span class="text-green-600 select-none">$ </span>' + escHtml(entry.content);
+    } else if (entry.type === 'output') {
+      div.className = 'text-slate-400 whitespace-pre-wrap py-0.5 pl-3 border-l border-slate-800';
+      div.textContent = entry.content;
+    } else if (entry.type === 'agent') {
+      div.className = 'text-blue-300 py-1 text-xs';
+      div.style.fontFamily = 'Inter, sans-serif';
+      div.innerHTML = '<span class="text-blue-600 select-none">🤖 </span>' + escHtml(entry.content);
+    } else if (entry.type === 'error') {
+      div.className = 'text-red-400 py-0.5';
+      div.textContent = entry.content;
+    }
+    liveLog.appendChild(div);
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+
+  function setDone(status, summary) {
+    if (typingIndicator) typingIndicator.remove();
+
+    const badge = document.getElementById('status-badge');
+    if (status === 'done') {
+      badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800"><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> done</span>';
+    } else {
+      badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-red-900/60 text-red-300 border border-red-800">failed</span>';
+    }
+
+    if (summary) {
+      document.getElementById('summary-text').textContent = summary;
+      document.getElementById('summary-box').classList.remove('hidden');
+    }
+  }
+
+  const source = new EventSource('/host/{{ host.host_id }}/session/{{ session.session_id }}/stream?skip=' + skip);
+
+  source.onmessage = function(e) {
+    const entry = JSON.parse(e.data);
+    if (entry.type === 'done') {
+      source.close();
+      setDone(entry.status, entry.summary);
+    } else {
+      appendEntry(entry);
+    }
+  };
+
+  source.onerror = function() {
+    source.close();
+    if (typingIndicator) typingIndicator.remove();
+  };
+
+  // Scroll to bottom initially
+  logContainer.scrollTop = logContainer.scrollHeight;
+</script>
+{% else %}
+<script>
+  // Scroll to bottom for completed sessions
+  document.getElementById('log-container').scrollTop = document.getElementById('log-container').scrollHeight;
+</script>
+{% endif %}
+{% endblock %}

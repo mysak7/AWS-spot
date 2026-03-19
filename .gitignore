@@ -3,6 +3,7 @@ credentials.json
 hosts.json
 keys/*.pem
 keys/deleted/*.pem
+sessions/
 __pycache__/
 *.pyc
 .pytest_cache/

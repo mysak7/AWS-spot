@@ -1,4 +1,6 @@
 import asyncio
+import json
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -6,7 +8,7 @@ from threading import Thread
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -21,6 +23,11 @@ from inventory import load_hosts
 from provisioner import provision_instance, terminate_host
 from spot_scanner import scan_spot_prices
 from jobs import create_job, get_job, update_job
+from agent.sessions import (
+    create_session, append_log, finish_session,
+    load_session, load_session_meta, read_log, list_sessions,
+)
+from agent.runner import run_agent
 
 creds: dict[str, str] = {}
 account_id: str = ""
@@ -238,3 +245,89 @@ async def do_terminate(request: Request, host_id: str):
     except Exception as e:
         host = {**host, "_error": str(e)}
     return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))
+
+
+# ── Host workbench ────────────────────────────────────────────────────────────
+
+@app.get("/host/{host_id}", response_class=HTMLResponse)
+async def host_detail(request: Request, host_id: str):
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse('<p class="text-red-400 p-8">Host not found.</p>')
+    sessions = list_sessions(host_id)
+    has_key = os.environ.get("ANTHROPIC_API_KEY") is not None
+    return templates.TemplateResponse("host_detail.html", ctx(
+        request, host=host, sessions=sessions,
+        has_key=has_key, active_page="inventory",
+    ))
+
+
+@app.post("/host/{host_id}/run", response_class=HTMLResponse)
+async def host_run(request: Request, host_id: str):
+    form = await request.form()
+    instruction = str(form.get("instruction", "")).strip()
+    if not instruction:
+        return HTMLResponse('<p class="text-red-400 text-sm">Instruction cannot be empty.</p>')
+
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse('<p class="text-red-400 text-sm">Host not found.</p>')
+
+    session_id = create_session(host_id, instruction)
+
+    def do_run() -> None:
+        def on_log(entry: dict) -> None:
+            append_log(host_id, session_id, entry)
+        try:
+            summary = run_agent(host, instruction, on_log)
+            finish_session(host_id, session_id, "done", summary)
+        except Exception as e:
+            append_log(host_id, session_id, {"type": "error", "content": str(e)})
+            finish_session(host_id, session_id, "failed", str(e))
+
+    Thread(target=do_run, daemon=True).start()
+
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        f"/host/{host_id}/session/{session_id}", status_code=303
+    )
+
+
+@app.get("/host/{host_id}/session/{session_id}", response_class=HTMLResponse)
+async def session_detail(request: Request, host_id: str, session_id: str):
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    try:
+        session = load_session(host_id, session_id)
+    except Exception:
+        return HTMLResponse('<p class="text-red-400 p-8">Session not found.</p>')
+    return templates.TemplateResponse("session_detail.html", ctx(
+        request, host=host, session=session, active_page="inventory",
+    ))
+
+
+@app.get("/host/{host_id}/session/{session_id}/stream")
+async def session_stream(host_id: str, session_id: str, skip: int = 0):
+    async def generate():
+        sent = skip
+        while True:
+            log = read_log(host_id, session_id)
+            for entry in log[sent:]:
+                yield f"data: {json.dumps(entry)}\n\n"
+                sent += 1
+            try:
+                meta = load_session_meta(host_id, session_id)
+            except Exception:
+                break
+            if meta.get("status") in ("done", "failed"):
+                yield f"data: {json.dumps({'type': 'done', 'status': meta['status'], 'summary': meta.get('summary', '')})}\n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
