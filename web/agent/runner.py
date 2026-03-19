@@ -2,6 +2,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from threading import Event
 from typing import Any
 
 from openai import OpenAI
@@ -80,7 +81,9 @@ def run_agent(
     bridge_url: str = "http://localhost:8001",
     bridge_api_key: str = "test",
     session_id: str = "",
-) -> str:
+    stop_event: Event | None = None,
+) -> tuple[str, str]:
+    """Returns (summary, final_status) where final_status is 'done'|'failed'|'stopped'."""
     """
     Connect via SSH, let Claude (via ClaudeBridge) run commands to fulfill the instruction.
     Streams log entries via on_log callback.
@@ -96,9 +99,16 @@ def run_agent(
     consecutive_parse_failures = 0
     last_message = ""
     recent_commands: list[str] = []  # last N commands for loop detection
+    stopped = False
 
     try:
         while steps < MAX_STEPS:
+            if stop_event and stop_event.is_set():
+                stopped = True
+                last_message = "Stopped by user."
+                on_log({"type": "error", "content": "Stopped by user."})
+                break
+
             response = _call(client, messages, host_id, session_id, steps + 1)
 
             raw = response.choices[0].message.content or ""
@@ -164,6 +174,8 @@ def run_agent(
                 last_message = raw.strip()
                 break
 
+        final_status = "stopped" if stopped else "done"
+
         # Generate summary
         t0 = time.monotonic()
         summary_resp = client.chat.completions.create(
@@ -192,7 +204,7 @@ def run_agent(
                 output_tokens=usage.completion_tokens or 0,
                 duration_ms=dur,
             )
-        return summary_resp.choices[0].message.content.strip()
+        return summary_resp.choices[0].message.content.strip(), final_status
 
     finally:
         ssh.close()
