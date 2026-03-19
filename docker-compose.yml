@@ -15,4 +15,5 @@ services:
       - /usr/lib/node_modules/@anthropic-ai/claude-code:/usr/lib/node_modules/@anthropic-ai/claude-code:ro
       - /home/mi/.claude.json:/home/claudeuser/.claude.json:ro
       - /home/mi/.claude:/home/claudeuser/.claude
+    user: "1000:1000"
     restart: unless-stopped
