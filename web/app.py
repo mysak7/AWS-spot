@@ -29,6 +29,7 @@ from agent.sessions import (
     load_session, load_session_meta, read_log, list_sessions,
 )
 from agent.runner import run_agent
+from agent.stop_flags import create_flag, request_stop, cleanup as cleanup_stop_flag
 from llm_log import load_log, get_totals, INPUT_COST_PER_M, OUTPUT_COST_PER_M
 
 creds: dict[str, str] = {}
@@ -279,27 +280,40 @@ async def host_run(request: Request, host_id: str):
 
     session_id = create_session(host_id, instruction)
     bridge_cfg = load_config()
+    stop_event = create_flag(session_id)
 
     def do_run() -> None:
         def on_log(entry: dict) -> None:
             append_log(host_id, session_id, entry)
         try:
-            summary = run_agent(
+            summary, final_status = run_agent(
                 host, instruction, on_log,
                 bridge_url=bridge_cfg["bridge_url"],
                 bridge_api_key=bridge_cfg["bridge_api_key"],
                 session_id=session_id,
+                stop_event=stop_event,
             )
-            finish_session(host_id, session_id, "done", summary)
+            finish_session(host_id, session_id, final_status, summary)
         except Exception as e:
             append_log(host_id, session_id, {"type": "error", "content": str(e)})
             finish_session(host_id, session_id, "failed", str(e))
+        finally:
+            cleanup_stop_flag(session_id)
 
     Thread(target=do_run, daemon=True).start()
 
     from fastapi.responses import RedirectResponse
     return RedirectResponse(
         f"/host/{host_id}/session/{session_id}", status_code=303
+    )
+
+
+@app.post("/host/{host_id}/session/{session_id}/stop", response_class=HTMLResponse)
+async def session_stop(host_id: str, session_id: str):
+    request_stop(session_id)
+    return HTMLResponse(
+        '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs '
+        'bg-orange-900/60 text-orange-300 border border-orange-800">stopping…</span>'
     )
 
 

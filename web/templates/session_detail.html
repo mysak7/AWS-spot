@@ -21,10 +21,22 @@
         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">
           <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> done
         </span>
+      {% elif session.status == 'stopped' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-orange-900/60 text-orange-300 border border-orange-800">stopped</span>
       {% else %}
         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-red-900/60 text-red-300 border border-red-800">failed</span>
       {% endif %}
     </div>
+    {% if session.status == 'running' %}
+    <button id="stop-btn"
+      hx-post="/host/{{ host.host_id }}/session/{{ session.session_id }}/stop"
+      hx-target="#status-badge"
+      hx-swap="innerHTML"
+      hx-on::after-request="this.remove()"
+      class="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/60 hover:bg-red-800 text-red-300 border border-red-800 transition-colors">
+      Stop
+    </button>
+    {% endif %}
   </div>
 
   <!-- Log terminal -->
@@ -95,10 +107,14 @@
 
   function setDone(status, summary) {
     if (typingIndicator) typingIndicator.remove();
+    const stopBtn = document.getElementById('stop-btn');
+    if (stopBtn) stopBtn.remove();
 
     const badge = document.getElementById('status-badge');
     if (status === 'done') {
       badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800"><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> done</span>';
+    } else if (status === 'stopped') {
+      badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-orange-900/60 text-orange-300 border border-orange-800">stopped</span>';
     } else {
       badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs bg-red-900/60 text-red-300 border border-red-800">failed</span>';
     }
