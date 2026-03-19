@@ -1,0 +1,13 @@
+credentials.json
+.env
+hosts.json
+keys/
+sessions/
+bridge_config.json
+llm_log.jsonl
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.pem

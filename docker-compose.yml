@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    network_mode: host
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./bridge_config.json:/app/bridge_config.json
+      - ./hosts.json:/app/hosts.json
+      - ./llm_log.jsonl:/app/llm_log.jsonl
+      - ./keys:/app/keys
+      - ./sessions:/app/sessions
+    restart: unless-stopped
