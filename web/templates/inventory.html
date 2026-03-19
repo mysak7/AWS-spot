@@ -26,12 +26,13 @@
           <th class="px-5 py-3 text-right">$/hr</th>
           <th class="px-5 py-3 text-right">$/mo</th>
           <th class="px-5 py-3 text-left">Status</th>
+          <th class="px-5 py-3 text-left">Notes</th>
           <th class="px-5 py-3 text-left">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-800">
         {% for h in hosts %}
-        {% include "partials/host_row.html" %}
+        {% with host=h %}{% include "partials/host_row.html" %}{% endwith %}
         {% endfor %}
       </tbody>
     </table>

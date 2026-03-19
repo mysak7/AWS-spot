@@ -1,7 +1,7 @@
 {% set s = host.status %}
 <tr id="row-{{ host.host_id }}" class="hover:bg-slate-800/40 transition-colors {% if s == 'terminated' %}opacity-50{% endif %}">
   <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.host_id[-12:] }}</td>
-  <td class="px-5 py-3 text-slate-300 text-xs">{{ host.name }}</td>
+  <td class="px-5 py-3 text-slate-300 text-xs font-medium">{{ host.name }}</td>
   <td class="px-5 py-3 text-slate-200 font-medium">{{ host.instance_type }}</td>
   <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.az }}</td>
   <td class="px-5 py-3 font-mono text-xs text-slate-300">{{ host.public_ip or '—' }}</td>
@@ -23,9 +23,18 @@
       <div class="text-red-400 text-xs mt-1">{{ host._error }}</div>
     {% endif %}
   </td>
+  <td class="px-5 py-3 text-slate-500 text-xs max-w-[140px] truncate" title="{{ host.notes or '' }}">
+    {{ host.notes or '—' }}
+  </td>
   <td class="px-5 py-3">
-    {% if s == 'running' %}
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-1.5">
+      <button hx-get="/host/{{ host.host_id }}/edit"
+              hx-target="#row-{{ host.host_id }}"
+              hx-swap="outerHTML"
+              class="px-2.5 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+        Edit
+      </button>
+      {% if s == 'running' %}
       <button onclick="navigator.clipboard.writeText('{{ host.ssh_cmd }}')"
               title="{{ host.ssh_cmd }}"
               class="px-2.5 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
@@ -35,7 +44,7 @@
               class="px-2.5 py-1 text-xs rounded bg-red-900 hover:bg-red-800 text-red-300 transition-colors">
         Terminate
       </button>
+      {% endif %}
     </div>
-    {% endif %}
   </td>
 </tr>

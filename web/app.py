@@ -178,6 +178,50 @@ async def inventory_page(request: Request):
     ))
 
 
+@app.get("/host/{host_id}/row", response_class=HTMLResponse)
+async def host_row(request: Request, host_id: str):
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse(f'<tr id="row-{host_id}"></tr>')
+    return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))
+
+
+@app.get("/host/{host_id}/edit", response_class=HTMLResponse)
+async def host_edit_form(request: Request, host_id: str):
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    if not host:
+        return HTMLResponse(f'<tr id="row-{host_id}"></tr>')
+    return templates.TemplateResponse("partials/host_edit_row.html", ctx(request, host=host))
+
+
+@app.post("/host/{host_id}/edit", response_class=HTMLResponse)
+async def host_edit_save(request: Request, host_id: str):
+    form = await request.form()
+    updates: dict[str, str] = {
+        "name": str(form.get("name", "")).strip(),
+        "notes": str(form.get("notes", "")).strip(),
+    }
+    # Allow editing public_ip in case it changed (e.g. elastic IP swap)
+    if form.get("public_ip"):
+        ip = str(form["public_ip"]).strip()
+        updates["public_ip"] = ip
+        # Rebuild ssh_cmd with new IP
+        hosts = load_hosts()
+        host = next((h for h in hosts if h["host_id"] == host_id), None)
+        if host:
+            updates["ssh_cmd"] = host["ssh_cmd"].rsplit("@", 1)[0] + "@" + ip
+    from inventory import update_host, InventoryError
+    try:
+        update_host(host_id, updates)
+    except InventoryError as e:
+        return HTMLResponse(f'<tr id="row-{host_id}"><td colspan="10" class="text-red-400 p-3 text-sm">{e}</td></tr>')
+    hosts = load_hosts()
+    host = next((h for h in hosts if h["host_id"] == host_id), None)
+    return templates.TemplateResponse("partials/host_row.html", ctx(request, host=host))
+
+
 @app.post("/terminate/{host_id}", response_class=HTMLResponse)
 async def do_terminate(request: Request, host_id: str):
     hosts = load_hosts()

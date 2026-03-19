@@ -1,0 +1,68 @@
+{% set s = host.status %}
+<tr id="row-{{ host.host_id }}" class="bg-slate-800/60 border-y border-slate-600">
+  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.host_id[-12:] }}</td>
+
+  <!-- Name (editable) -->
+  <td class="px-3 py-2" colspan="1">
+    <form id="edit-form-{{ host.host_id }}"
+          hx-post="/host/{{ host.host_id }}/edit"
+          hx-target="#row-{{ host.host_id }}"
+          hx-swap="outerHTML">
+      <input type="text" name="name" value="{{ host.name }}"
+             class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-green-500"
+             placeholder="Name">
+  </td>
+
+  <td class="px-5 py-3 text-slate-400 text-xs">{{ host.instance_type }}</td>
+  <td class="px-5 py-3 font-mono text-xs text-slate-400">{{ host.az }}</td>
+
+  <!-- Public IP (editable) -->
+  <td class="px-3 py-2">
+    <input type="text" name="public_ip" value="{{ host.public_ip or '' }}"
+           form="edit-form-{{ host.host_id }}"
+           class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs font-mono text-slate-100 focus:outline-none focus:border-green-500"
+           placeholder="IP">
+  </td>
+
+  <td class="px-5 py-3 text-right font-mono text-green-400 text-xs">${{ host.spot_price_usd }}</td>
+  <td class="px-5 py-3 text-right font-mono text-yellow-400 text-xs">${{ host.monthly_price_usd or '?' }}</td>
+
+  <!-- Status (read-only) -->
+  <td class="px-5 py-3">
+    {% if s == 'running' %}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-900/60 text-green-300 border border-green-800">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> running
+      </span>
+    {% elif s == 'terminated' %}
+      <span class="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-500 border border-slate-700">terminated</span>
+    {% else %}
+      <span class="px-2 py-0.5 rounded-full text-xs bg-yellow-900/60 text-yellow-300 border border-yellow-800">{{ s }}</span>
+    {% endif %}
+  </td>
+
+  <!-- Notes (editable) -->
+  <td class="px-3 py-2">
+    <input type="text" name="notes" value="{{ host.notes or '' }}"
+           form="edit-form-{{ host.host_id }}"
+           class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-green-500"
+           placeholder="Notes…">
+  </td>
+
+  <!-- Save / Cancel -->
+  <td class="px-3 py-2">
+    <div class="flex items-center gap-1.5">
+      <button type="submit" form="edit-form-{{ host.host_id }}"
+              class="px-2.5 py-1 text-xs rounded bg-green-700 hover:bg-green-600 text-white transition-colors font-semibold">
+        Save
+      </button>
+      <button type="button"
+              hx-get="/host/{{ host.host_id }}/row"
+              hx-target="#row-{{ host.host_id }}"
+              hx-swap="outerHTML"
+              class="px-2.5 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+        Cancel
+      </button>
+    </div>
+    </form>
+  </td>
+</tr>
