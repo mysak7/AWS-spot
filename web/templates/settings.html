@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="p-8 max-w-2xl mx-auto">
+
+  <div class="mb-8">
+    <h1 class="text-xl font-semibold text-slate-100">Settings</h1>
+    <p class="text-sm text-slate-500 mt-1">Configure the ClaudeBridge connection used by the agent workbench.</p>
+  </div>
+
+  <!-- Flash message -->
+  {% if saved %}
+  <div class="mb-6 flex items-center gap-2 bg-green-950 border border-green-800 text-green-300 text-sm rounded-xl px-4 py-3">
+    <span class="text-base">✓</span> Settings saved.
+  </div>
+  {% endif %}
+
+  <!-- Bridge Config -->
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-6">
+    <h2 class="text-sm font-semibold text-slate-200 mb-5 uppercase tracking-wider">ClaudeBridge</h2>
+
+    <form method="POST" action="/settings">
+      <div class="space-y-4">
+
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5">Bridge URL</label>
+          <input type="url" name="bridge_url" value="{{ config.bridge_url }}" required
+            placeholder="http://ras:8001"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100
+                   placeholder-slate-600 focus:outline-none focus:border-green-600 font-mono">
+          <p class="text-xs text-slate-600 mt-1.5">Base URL of your ClaudeBridge instance (no trailing slash)</p>
+        </div>
+
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5">API Key</label>
+          <input type="text" name="bridge_api_key" value="{{ config.bridge_api_key }}"
+            placeholder="test"
+            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-100
+                   placeholder-slate-600 focus:outline-none focus:border-green-600 font-mono">
+          <p class="text-xs text-slate-600 mt-1.5">Bearer token set via API_KEY env var in ClaudeBridge</p>
+        </div>
+
+      </div>
+
+      <div class="mt-6 flex items-center gap-3">
+        <button type="submit"
+          class="px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white text-sm font-semibold rounded-lg transition-colors">
+          Save Settings
+        </button>
+        <button type="button" id="test-btn" onclick="testConnection()"
+          class="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">
+          Test Connection
+        </button>
+        <span id="test-result" class="text-sm"></span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Info box -->
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+    <h2 class="text-sm font-semibold text-slate-200 mb-4 uppercase tracking-wider">About ClaudeBridge</h2>
+    <div class="space-y-2 text-sm text-slate-400">
+      <p>ClaudeBridge exposes the Claude Code CLI as an OpenAI-compatible REST API. The agent workbench sends SSH instructions through it.</p>
+      <p class="font-mono text-xs text-slate-500">POST {{ config.bridge_url }}/v1/chat/completions</p>
+      <p class="text-xs text-slate-600 mt-3">
+        Source: <span class="font-mono text-slate-500">/home/mi/GitHub/claudebridge</span>
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  async function testConnection() {
+    const btn = document.getElementById('test-btn');
+    const result = document.getElementById('test-result');
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    result.textContent = '';
+    result.className = 'text-sm text-slate-400';
+
+    try {
+      const resp = await fetch('/settings/test', { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        result.textContent = '✓ Connected';
+        result.className = 'text-sm text-green-400';
+      } else {
+        result.textContent = '✗ ' + (data.error || 'Connection failed');
+        result.className = 'text-sm text-red-400';
+      }
+    } catch (e) {
+      result.textContent = '✗ ' + e.message;
+      result.className = 'text-sm text-red-400';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+    }
+  }
+</script>
+{% endblock %}

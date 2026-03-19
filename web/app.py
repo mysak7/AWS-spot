@@ -23,6 +23,7 @@ from inventory import load_hosts
 from provisioner import provision_instance, terminate_host
 from spot_scanner import scan_spot_prices
 from jobs import create_job, get_job, update_job
+from config_store import load_config, save_config
 from agent.sessions import (
     create_session, append_log, finish_session,
     load_session, load_session_meta, read_log, list_sessions,
@@ -256,10 +257,8 @@ async def host_detail(request: Request, host_id: str):
     if not host:
         return HTMLResponse('<p class="text-red-400 p-8">Host not found.</p>')
     sessions = list_sessions(host_id)
-    has_key = os.environ.get("ANTHROPIC_API_KEY") is not None
     return templates.TemplateResponse("host_detail.html", ctx(
-        request, host=host, sessions=sessions,
-        has_key=has_key, active_page="inventory",
+        request, host=host, sessions=sessions, active_page="inventory",
     ))
 
 
@@ -276,12 +275,17 @@ async def host_run(request: Request, host_id: str):
         return HTMLResponse('<p class="text-red-400 text-sm">Host not found.</p>')
 
     session_id = create_session(host_id, instruction)
+    bridge_cfg = load_config()
 
     def do_run() -> None:
         def on_log(entry: dict) -> None:
             append_log(host_id, session_id, entry)
         try:
-            summary = run_agent(host, instruction, on_log)
+            summary = run_agent(
+                host, instruction, on_log,
+                bridge_url=bridge_cfg["bridge_url"],
+                bridge_api_key=bridge_cfg["bridge_api_key"],
+            )
             finish_session(host_id, session_id, "done", summary)
         except Exception as e:
             append_log(host_id, session_id, {"type": "error", "content": str(e)})
@@ -306,6 +310,44 @@ async def session_detail(request: Request, host_id: str, session_id: str):
     return templates.TemplateResponse("session_detail.html", ctx(
         request, host=host, session=session, active_page="inventory",
     ))
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, saved: bool = False):
+    return templates.TemplateResponse("settings.html", ctx(
+        request, config=load_config(), saved=saved, active_page="settings",
+    ))
+
+
+@app.post("/settings", response_class=HTMLResponse)
+async def settings_save(request: Request):
+    form = await request.form()
+    save_config({
+        "bridge_url": str(form.get("bridge_url", "")).strip().rstrip("/"),
+        "bridge_api_key": str(form.get("bridge_api_key", "")).strip(),
+    })
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+@app.post("/settings/test")
+async def settings_test():
+    import httpx
+    cfg = load_config()
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            resp = await hc.post(
+                f"{cfg['bridge_url'].rstrip('/')}/v1/chat/completions",
+                json={"model": "claude-code", "messages": [{"role": "user", "content": "ping"}]},
+                headers={"Authorization": f"Bearer {cfg['bridge_api_key']}"},
+            )
+        if resp.status_code == 200:
+            return {"ok": True}
+        return {"ok": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/host/{host_id}/session/{session_id}/stream")

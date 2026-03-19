@@ -4,6 +4,7 @@ hosts.json
 keys/*.pem
 keys/deleted/*.pem
 sessions/
+bridge_config.json
 __pycache__/
 *.pyc
 .pytest_cache/
