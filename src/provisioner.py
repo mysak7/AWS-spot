@@ -49,6 +49,25 @@ def get_latest_ami(client: Any) -> str:
     return images[0]["ImageId"]
 
 
+def get_default_subnet(client: Any, az: str) -> str:
+    """Return the default subnet ID for the given AZ."""
+    try:
+        resp = client.describe_subnets(
+            Filters=[
+                {"Name": "availabilityZone", "Values": [az]},
+                {"Name": "defaultForAz", "Values": ["true"]},
+            ]
+        )
+        subnets = resp.get("Subnets", [])
+        if not subnets:
+            raise ProvisionError(f"No default subnet found in {az}")
+        return subnets[0]["SubnetId"]
+    except ClientError as e:
+        raise ProvisionError(
+            f"Failed to find subnet in {az}: {e.response['Error']['Message']}"
+        ) from e
+
+
 def ensure_security_group(client: Any) -> str:
     """Return group ID of existing spot-manager-sg, or create it (SSH only)."""
     try:
@@ -128,8 +147,9 @@ def provision_instance(
     try:
         _p("Ensuring security group...")
         sg_id = ensure_security_group(client)
-        _p("Fetching latest AMI...")
+        _p("Fetching latest AMI and default subnet...")
         ami_id = get_latest_ami(client)
+        subnet_id = get_default_subnet(client, az)
 
         # Bid 2x current price for higher fill probability
         bid = f"{float(spot_price_usd) * 2:.6f}"
@@ -143,8 +163,15 @@ def provision_instance(
                     "ImageId": ami_id,
                     "InstanceType": instance_type,
                     "KeyName": key_name,
-                    "SecurityGroupIds": [sg_id],
                     "Placement": {"AvailabilityZone": az},
+                    "NetworkInterfaces": [
+                        {
+                            "DeviceIndex": 0,
+                            "SubnetId": subnet_id,
+                            "Groups": [sg_id],
+                            "AssociatePublicIpAddress": True,
+                        }
+                    ],
                 },
                 Type="one-time",
             )
