@@ -5,6 +5,7 @@ keys/*.pem
 keys/deleted/*.pem
 sessions/
 bridge_config.json
+llm_log.jsonl
 __pycache__/
 *.pyc
 .pytest_cache/
