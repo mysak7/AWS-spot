@@ -381,28 +381,27 @@ async def settings_page(request: Request, saved: bool = False):
 @app.post("/settings", response_class=HTMLResponse)
 async def settings_save(request: Request):
     form = await request.form()
-    save_config({
-        "bridge_url": str(form.get("bridge_url", "")).strip().rstrip("/"),
-        "bridge_api_key": str(form.get("bridge_api_key", "")).strip(),
-    })
+    save_config({"claude_bin": str(form.get("claude_bin", "")).strip()})
     from fastapi.responses import RedirectResponse
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 
 @app.post("/settings/test")
 async def settings_test():
-    import httpx
+    import asyncio
     cfg = load_config()
     try:
-        async with httpx.AsyncClient(timeout=15) as hc:
-            resp = await hc.post(
-                f"{cfg['bridge_url'].rstrip('/')}/v1/chat/completions",
-                json={"model": "claude-code", "messages": [{"role": "user", "content": "ping"}]},
-                headers={"Authorization": f"Bearer {cfg['bridge_api_key']}"},
-            )
-        if resp.status_code == 200:
-            return {"ok": True}
-        return {"ok": False, "error": f"HTTP {resp.status_code}"}
+        proc = await asyncio.create_subprocess_exec(
+            *cfg["claude_bin"].split(), "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode == 0:
+            return {"ok": True, "version": stdout.decode().strip()}
+        return {"ok": False, "error": stderr.decode().strip() or f"exit {proc.returncode}"}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "Timed out"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
